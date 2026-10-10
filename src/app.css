@@ -142,7 +142,7 @@ button, input { font-family: inherit; }
 .site-footer__settings:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .site-footer__settings svg { width: 14px; height: 14px; }
 .site-footer__settings small { padding: 2px 4px; border-radius: 3px; color: var(--green); background: var(--surface-soft); font-size: 9px; }
-.page-content { width: min(var(--content-max-width), 100%); margin: 0 auto; padding: 28px 32px 42px; }
+.page-content { margin: 0 auto; padding: 28px 32px 42px; }
 .page-content--settings { width: min(1080px, 100%); }
 .page-content--settings > .page-heading,
 .page-content--settings > .settings-card,
