@@ -579,10 +579,6 @@ function OverviewPage({ time, scheduled, scheduledTime, scheduleDays, records, s
   const latest = records[0];
   return <div className="page-content overview-page">
     <div className="page-heading"><div><div className="eyebrow">{formatEyebrow(time)}</div><h1>查寝总览</h1><p>{formatDay(time)} <span className="live-clock"><Clock3 />{formatClock(time)}</span></p></div><Button variant="primary" leadingIcon={authenticated ? queue.active || isChecking ? <RefreshCw className="spin" /> : <Play /> : <KeyRound />} disabled={authenticated && (isChecking || queue.active)} onClick={() => authenticated ? onRunCheck() : onSignIn()}>{authenticated ? queue.active ? queue.status === "running" ? "正在执行" : "已排队" : isChecking ? "正在提交" : "立即查寝" : "登录或注册"}</Button></div>
-    {authenticated && queue.active ? <Notice title={queue.paused ? "校园访问冷却中" : queue.status === "running" ? "查寝正在执行" : queue.status === "retry_wait" ? "等待重试" : "查寝已排队"} tone={queue.paused ? "warning" : "info"}>
-      {queue.status === "running" ? "正在等待校园平台返回结果。" : queue.not_before ? `最早尝试时间：${formatNotificationTime(queue.not_before)}。` : "等待前面的任务完成。"}
-      {queue.attempts ? ` 已尝试 ${queue.attempts} / ${queue.max_attempts} 次。` : ""}
-    </Notice> : null}
     <div className="stats-grid">
       <StatCard label="最近一次查寝" value={!authenticated ? "未登录" : !latest ? "暂无记录" : latest.status === "success" ? "已完成" : "需处理"} detail={!authenticated ? "登录后查看记录" : latest?.time ?? "配置后开始自动查寝"} icon={<CheckCheck />} tone="green" />
       <StatCard label="近 7 日成功率" value={authenticated ? `${successRate}%` : "未登录"} detail={authenticated ? `${successCount} 次成功记录` : "登录后查看统计"} icon={<Activity />} tone="blue" />
