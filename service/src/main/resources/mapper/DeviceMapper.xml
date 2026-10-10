@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.seekwd.dormcheck.mapper.DeviceMapper">
+  <select id="findIdByKey" resultType="string">SELECT id FROM auth_devices WHERE user_id=#{userId} AND device_key_hash=#{keyHash}</select>
+  <select id="findCurrentId" resultType="string">SELECT id FROM auth_devices WHERE user_id=#{userId} AND device_key_hash=#{keyHash}</select>
+  <insert id="insert">
+    INSERT INTO auth_devices(id,user_id,device_key_hash,device_name,platform,user_agent,language,timezone,screen_size,hardware_threads,device_memory,created_at,last_seen_at)
+    VALUES(#{id},#{userId},#{deviceKeyHash},#{deviceName},#{platform},#{userAgent},#{language},#{timezone},#{screenSize},#{hardwareThreads},#{deviceMemory},#{createdAt},#{lastSeenAt})
+  </insert>
+  <update id="update">
+    UPDATE auth_devices SET device_name=#{deviceName},platform=#{platform},user_agent=#{userAgent},language=#{language},
+      timezone=#{timezone},screen_size=#{screenSize},hardware_threads=#{hardwareThreads},device_memory=#{deviceMemory},last_seen_at=#{lastSeenAt}
+    WHERE id=#{id} AND user_id=#{userId}
+  </update>
+  <select id="findByUser" resultType="DeviceEntity">
+    SELECT id,user_id,device_name,device_name AS name,platform,language,timezone,screen_size,hardware_threads,device_memory,created_at,last_seen_at
+    FROM auth_devices WHERE user_id=#{userId} ORDER BY last_seen_at DESC
+  </select>
+  <select id="countOwned" resultType="int">SELECT COUNT(*) FROM auth_devices WHERE id=#{id} AND user_id=#{userId}</select>
+  <delete id="deleteOwned">DELETE FROM auth_devices WHERE id=#{id} AND user_id=#{userId}</delete>
+</mapper>

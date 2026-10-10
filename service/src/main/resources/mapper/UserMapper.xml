@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.seekwd.dormcheck.mapper.UserMapper">
+  <resultMap id="authenticationUser" type="UserEntity">
+    <id property="id" column="id"/>
+    <result property="email" column="email"/>
+    <result property="displayName" column="display_name"/>
+    <result property="passwordSalt" column="password_salt" typeHandler="com.seekwd.dormcheck.config.SqliteBytesTypeHandler"/>
+    <result property="passwordHash" column="password_hash" typeHandler="com.seekwd.dormcheck.config.SqliteBytesTypeHandler"/>
+  </resultMap>
+  <select id="existsByEmail" resultType="int">SELECT COUNT(*) FROM users WHERE email=#{email}</select>
+  <insert id="insert">
+    INSERT INTO users(id,email,display_name,password_salt,password_hash,created_at)
+    VALUES(#{id},#{email},#{displayName},#{passwordSalt},#{passwordHash},#{createdAt})
+  </insert>
+  <select id="findAuthenticationByEmail" resultMap="authenticationUser">
+    SELECT id,email,display_name,password_salt,password_hash FROM users WHERE email=#{email}
+  </select>
+  <select id="findProfileById" resultType="UserEntity">
+    SELECT id,email,display_name FROM users WHERE id=#{id}
+  </select>
+  <select id="findEmailById" resultType="string">SELECT email FROM users WHERE id=#{id}</select>
+  <select id="findIdByEmail" resultType="string">SELECT id FROM users WHERE email=#{email}</select>
+</mapper>

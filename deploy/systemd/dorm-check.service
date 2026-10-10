@@ -1,0 +1,27 @@
+[Unit]
+Description=Dorm Check Java service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dormcheck
+Group=dormcheck
+WorkingDirectory=/opt/dorm-check
+EnvironmentFile=/etc/dorm-check/dorm-check.env
+ExecStart=/usr/bin/java -jar /opt/dorm-check/app/dorm-check-service.jar
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/opt/dorm-check/var
+
+[Install]
+WantedBy=multi-user.target

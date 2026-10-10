@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.seekwd.dormcheck.mapper.RunMapper">
+  <insert id="insert">
+    INSERT INTO runs(id,user_id,status,message,started_at,duration_ms)
+    VALUES(#{id},#{userId},#{status},#{message},#{startedAt},#{durationMs})
+  </insert>
+  <select id="findRecent" resultType="RunEntity">
+    SELECT id,status,message,started_at,duration_ms FROM runs WHERE user_id=#{userId}
+    ORDER BY started_at DESC,id DESC LIMIT #{limit}
+  </select>
+  <select id="aggregateAll" resultType="RunStatsEntity">
+    SELECT COUNT(*) AS total,COALESCE(SUM(CASE WHEN status='success' THEN 1 ELSE 0 END),0) AS success_count
+    FROM runs WHERE user_id=#{userId}
+  </select>
+  <select id="aggregateSince" resultType="RunStatsEntity">
+    SELECT COUNT(*) AS total,COALESCE(SUM(CASE WHEN status='success' THEN 1 ELSE 0 END),0) AS success_count
+    FROM runs WHERE user_id=#{userId} AND started_at&gt;=#{cutoff}
+  </select>
+  <select id="countForHistory" resultType="long">
+    SELECT COUNT(*) FROM runs WHERE user_id=#{userId}
+    <if test="status != null and status != 'all'">AND status=#{status}</if>
+  </select>
+  <select id="findHistory" resultType="RunEntity">
+    SELECT id,status,message,started_at,duration_ms FROM runs WHERE user_id=#{userId}
+    <if test="status != null and status != 'all'">AND status=#{status}</if>
+    ORDER BY started_at DESC,id DESC LIMIT #{limit} OFFSET #{offset}
+  </select>
+</mapper>

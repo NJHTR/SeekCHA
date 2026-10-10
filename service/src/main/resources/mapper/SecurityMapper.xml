@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.seekwd.dormcheck.mapper.SecurityMapper">
+  <resultMap id="totp" type="UserTotpEntity">
+    <result property="secretCiphertext" column="secret_ciphertext" typeHandler="com.seekwd.dormcheck.config.SqliteBytesTypeHandler"/>
+    <result property="enabled" column="enabled"/>
+  </resultMap>
+  <resultMap id="emailCode" type="EmailCodeEntity">
+    <result property="codeHash" column="code_hash"/>
+    <result property="expiresAt" column="expires_at"/>
+    <result property="attempts" column="attempts"/>
+  </resultMap>
+  <insert id="upsertEmailCode">
+    INSERT INTO email_codes(email,purpose,code_hash,expires_at,attempts) VALUES(#{email},#{purpose},#{codeHash},#{expiresAt},0)
+    ON CONFLICT(email,purpose) DO UPDATE SET code_hash=excluded.code_hash,expires_at=excluded.expires_at,attempts=0
+  </insert>
+  <delete id="deleteEmailCode">DELETE FROM email_codes WHERE email=#{email} AND purpose=#{purpose}</delete>
+  <select id="findEmailCode" resultMap="emailCode">
+    SELECT code_hash,expires_at,attempts FROM email_codes WHERE email=#{email} AND purpose=#{purpose}
+  </select>
+  <update id="incrementEmailCodeAttempts">UPDATE email_codes SET attempts=attempts+1 WHERE email=#{email} AND purpose=#{purpose}</update>
+  <select id="findTotp" resultMap="totp">SELECT secret_ciphertext,enabled FROM user_totp WHERE user_id=#{userId}</select>
+  <select id="findEnabledTotp" resultMap="totp">SELECT secret_ciphertext,enabled FROM user_totp WHERE user_id=#{userId} AND enabled=1</select>
+  <insert id="upsertTotp">
+    INSERT INTO user_totp(user_id,secret_ciphertext,enabled,updated_at) VALUES(#{userId},#{secretCiphertext},0,#{updatedAt})
+    ON CONFLICT(user_id) DO UPDATE SET secret_ciphertext=excluded.secret_ciphertext,enabled=0,updated_at=excluded.updated_at
+  </insert>
+  <update id="enableTotp">UPDATE user_totp SET enabled=1,updated_at=#{updatedAt} WHERE user_id=#{userId}</update>
+  <delete id="deleteTotp">DELETE FROM user_totp WHERE user_id=#{userId}</delete>
+  <select id="totpEnabled" resultType="int">SELECT COALESCE(MAX(enabled),0) FROM user_totp WHERE user_id=#{userId}</select>
+</mapper>

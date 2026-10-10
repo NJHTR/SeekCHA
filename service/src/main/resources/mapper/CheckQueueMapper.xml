@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.seekwd.dormcheck.mapper.CheckQueueMapper">
+  <insert id="insert">
+    INSERT INTO check_jobs(id,user_id,trigger_type,status,max_attempts,created_at,not_before,expires_at)
+    VALUES(#{id},#{userId},#{triggerType},'queued',#{maxAttempts},#{createdAt},#{notBefore},#{expiresAt})
+  </insert>
+  <select id="findActive" resultType="CheckJobEntity">
+    SELECT * FROM check_jobs WHERE user_id=#{userId} AND status IN ('queued','running','retry_wait') LIMIT 1
+  </select>
+  <select id="findSuccessSince" resultType="CheckJobEntity">
+    SELECT * FROM check_jobs WHERE user_id=#{userId} AND status='success' AND created_at&gt;=#{since} ORDER BY created_at DESC LIMIT 1
+  </select>
+  <select id="attemptsSince" resultType="int">
+    SELECT COALESCE(SUM(attempts),0) FROM check_jobs
+    WHERE user_id=#{userId} AND trigger_type=#{triggerType} AND created_at&gt;=#{since}
+  </select>
+  <select id="lastStartedAt" resultType="string">
+    SELECT MAX(started_at) FROM check_jobs WHERE user_id=#{userId}
+  </select>
+  <select id="nextDue" resultType="CheckJobEntity">
+    SELECT * FROM check_jobs WHERE status IN ('queued','retry_wait')
+      AND (not_before&lt;=#{now} OR expires_at&lt;=#{now})
+    ORDER BY not_before,created_at,id LIMIT 1
+  </select>
+  <select id="findRunning" resultType="CheckJobEntity">SELECT * FROM check_jobs WHERE status='running'</select>
+  <update id="claim">
+    UPDATE check_jobs SET status='running',attempts=attempts+1,started_at=#{now}
+    WHERE id=#{id} AND status IN ('queued','retry_wait')
+  </update>
+  <update id="retry">
+    UPDATE check_jobs SET status='retry_wait',not_before=#{notBefore},last_error=#{message} WHERE id=#{id} AND status='running'
+  </update>
+  <update id="finish">
+    UPDATE check_jobs SET status=#{status},finished_at=#{now},last_error=#{message}
+    WHERE id=#{id} AND status IN ('queued','running','retry_wait')
+  </update>
+  <update id="cancelScheduled">
+    UPDATE check_jobs SET status='failure',finished_at=#{now},last_error='定时任务已暂停' WHERE user_id=#{userId} AND trigger_type='scheduled' AND status IN ('queued','retry_wait')
+  </update>
+  <select id="accessState" resultType="CampusAccessState">SELECT * FROM check_queue_state WHERE id=1</select>
+  <update id="acquireAccess">
+    UPDATE check_queue_state SET lease_token=#{token},lease_until=#{leaseUntil}
+    WHERE id=1 AND lease_until&lt;=#{now} AND not_before&lt;=#{now} AND cooldown_until&lt;=#{now}
+  </update>
+  <update id="releaseAccess">
+    UPDATE check_queue_state SET lease_token=NULL,lease_until=0,not_before=#{notBefore},
+      cooldown_until=MAX(cooldown_until,#{cooldownUntil}),
+      transient_failures=CASE WHEN #{transientFailure} THEN transient_failures+1 ELSE 0 END
+    WHERE id=1 AND lease_token=#{token}
+  </update>
+</mapper>

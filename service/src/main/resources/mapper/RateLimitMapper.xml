@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.seekwd.dormcheck.mapper.RateLimitMapper">
+  <select id="incrementWindow" resultType="int">
+    INSERT INTO rate_limits(bucket,window_start,attempts) VALUES(#{bucket},#{now},1)
+    ON CONFLICT(bucket) DO UPDATE SET
+      attempts=CASE WHEN rate_limits.window_start&lt;=#{cutoff} THEN 1 ELSE rate_limits.attempts+1 END,
+      window_start=CASE WHEN rate_limits.window_start&lt;=#{cutoff} THEN excluded.window_start ELSE rate_limits.window_start END
+    RETURNING attempts
+  </select>
+  <select id="find" resultType="RateLimitEntity">SELECT bucket,window_start,attempts FROM rate_limits WHERE bucket=#{bucket}</select>
+  <delete id="deleteExpired">DELETE FROM rate_limits WHERE window_start&lt;#{cutoff}</delete>
+  <delete id="delete">DELETE FROM rate_limits WHERE bucket=#{bucket}</delete>
+  <insert id="recordFailure">
+    INSERT INTO rate_limits(bucket,window_start,attempts) VALUES(#{bucket},#{now},1)
+    ON CONFLICT(bucket) DO UPDATE SET
+      attempts=CASE WHEN excluded.window_start-rate_limits.window_start&gt;=#{resetAfterSeconds} THEN 1 ELSE rate_limits.attempts+1 END,
+      window_start=excluded.window_start
+  </insert>
+</mapper>

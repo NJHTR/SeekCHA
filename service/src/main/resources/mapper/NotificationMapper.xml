@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.seekwd.dormcheck.mapper.NotificationMapper">
+  <insert id="insert">
+    INSERT INTO notifications(id,user_id,run_id,type,title,message,created_at,read_at)
+    VALUES(#{id},#{userId},#{runId},#{type},#{title},#{message},#{createdAt},NULL)
+  </insert>
+  <insert id="insertEvent">
+    INSERT INTO notifications(id,user_id,run_id,type,title,message,created_at,read_at)
+    VALUES(#{id},#{userId},NULL,#{type},#{title},#{message},#{createdAt},NULL)
+  </insert>
+  <select id="findLatest" resultType="NotificationEntity">
+    SELECT n.id,COALESCE(NULLIF(n.type,''),'run') AS type,
+      COALESCE(NULLIF(n.title,''), CASE WHEN r.status='failure' THEN '查寝失败' ELSE '查寝成功' END) AS title,
+      COALESCE(NULLIF(n.message,''),r.message,'') AS message,
+      r.status,COALESCE(r.started_at,n.created_at) AS time,COALESCE(r.duration_ms,0) AS duration_ms,
+      n.run_id AS runId,n.read_at
+    FROM notifications n LEFT JOIN runs r ON r.id=n.run_id WHERE n.user_id=#{userId}
+    ORDER BY n.created_at DESC,n.id DESC LIMIT #{limit}
+  </select>
+  <select id="countUnread" resultType="int">SELECT COUNT(*) FROM notifications WHERE user_id=#{userId} AND read_at IS NULL</select>
+  <update id="markAllRead">UPDATE notifications SET read_at=#{readAt} WHERE user_id=#{userId} AND read_at IS NULL</update>
+  <update id="markOneRead">UPDATE notifications SET read_at=#{readAt} WHERE id=#{id} AND user_id=#{userId} AND read_at IS NULL</update>
+</mapper>

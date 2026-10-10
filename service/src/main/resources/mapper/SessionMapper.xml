@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.seekwd.dormcheck.mapper.SessionMapper">
+  <select id="findActive" resultType="SessionEntity">
+    SELECT s.user_id,s.csrf_token,u.email,u.display_name,ds.device_id AS current_device_id
+    FROM sessions s JOIN users u ON u.id=s.user_id
+    LEFT JOIN auth_device_sessions ds ON ds.token_hash=s.token_hash
+    WHERE s.token_hash=#{tokenHash} AND s.expires_at&gt;#{now}
+  </select>
+  <insert id="insert">INSERT INTO sessions(token_hash,user_id,csrf_token,expires_at) VALUES(#{tokenHash},#{userId},#{csrfToken},#{expiresAt})</insert>
+  <insert id="insertDeviceSession">INSERT INTO auth_device_sessions(token_hash,device_id) VALUES(#{tokenHash},#{deviceId})</insert>
+  <delete id="deleteByTokenHash">DELETE FROM sessions WHERE token_hash=#{tokenHash}</delete>
+  <delete id="deleteForDevice">DELETE FROM sessions WHERE token_hash IN (SELECT token_hash FROM auth_device_sessions WHERE device_id=#{deviceId})</delete>
+</mapper>
