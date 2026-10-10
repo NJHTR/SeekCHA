@@ -489,9 +489,7 @@ export function App() {
           {pages.filter((item) => ["overview", "notices", "timetable"].includes(item.id)).map((item) => <SidebarItem key={item.id} icon={!user && item.id !== "overview" ? <LockKeyhole /> : item.icon} active={page === item.id} onClick={() => navigate(item.id)}>{item.label}</SidebarItem>)}
         </nav></SidebarSection>
         <div className="sidebar-account">
-          <SidebarSection label="账户">
-            {user ? <SidebarItem icon={<UserRound />} active={page === "account"} title={user.email} onClick={() => navigate("account")}><span className="sidebar-account-copy"><strong>{user.name}</strong><small>{user.email}</small></span></SidebarItem> : <Button className="sidebar-signin" variant="quiet" leadingIcon={<UserRound />} onClick={() => setAuthMode("login")}>登录 / 注册</Button>}
-          </SidebarSection>
+          {user ? <SidebarItem icon={<UserRound />} active={page === "account"} title={user.email} onClick={() => navigate("account")}><span className="sidebar-account-copy"><strong>{user.name}</strong><small>{user.email}</small></span></SidebarItem> : <Button className="sidebar-signin" variant="quiet" leadingIcon={<UserRound />} onClick={() => setAuthMode("login")}>登录 / 注册</Button>}
         </div>
         </div></div>}
       >
