@@ -503,7 +503,7 @@ export function App() {
             <Tooltip content="定时任务"><IconButton label="定时任务" active={page === "schedule"} onClick={() => navigate("schedule")}><CalendarClock /></IconButton></Tooltip>
             <Tooltip content="账号设置"><IconButton label="账号设置" active={page === "account"} onClick={() => navigate("account")}><KeyRound /></IconButton></Tooltip>
           </nav>
-          <a className="breadcrumb-github" href="https://github.com/NJHTR" target="_blank" rel="noopener noreferrer" aria-label="访问 NJHTR 的 GitHub 主页" title="GitHub"><Github aria-hidden="true" /><span>GitHub</span></a>
+          <a className="breadcrumb-github" href="https://github.com/NJHTR/SeekCHA" target="_blank" rel="noopener noreferrer" aria-label="访问 SeekCHA GitHub 仓库" title="GitHub"><Github aria-hidden="true" /><span>GitHub</span></a>
         </header>
 
         <div className="page-scroll">
