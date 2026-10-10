@@ -490,7 +490,7 @@ export function App() {
         </nav></SidebarSection>
         <div className="sidebar-account">
           <SidebarSection label="账户">
-            {user ? <SidebarItem icon={<UserRound />} active={page === "account"} title={user.email} onClick={() => navigate("account")}>{user.name}</SidebarItem> : <Button className="sidebar-signin" variant="quiet" leadingIcon={<UserRound />} onClick={() => setAuthMode("login")}>登录 / 注册</Button>}
+            {user ? <SidebarItem icon={<UserRound />} active={page === "account"} title={user.email} onClick={() => navigate("account")}><span className="sidebar-account-copy"><strong>{user.name}</strong><small>{user.email}</small></span></SidebarItem> : <Button className="sidebar-signin" variant="quiet" leadingIcon={<UserRound />} onClick={() => setAuthMode("login")}>登录 / 注册</Button>}
           </SidebarSection>
         </div>
         </div></div>}
