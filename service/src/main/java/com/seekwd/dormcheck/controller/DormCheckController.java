@@ -2,6 +2,7 @@ package com.seekwd.dormcheck.controller;
 import com.seekwd.dormcheck.service.DormCheckService;
 import com.seekwd.dormcheck.service.impl.AuthSecurityService;
 import com.seekwd.dormcheck.service.SessionService;
+import com.seekwd.dormcheck.service.AdminService;
 import com.seekwd.dormcheck.api.dto.AuthRequest;
 import com.seekwd.dormcheck.api.dto.CredentialRequest;
 import com.seekwd.dormcheck.api.dto.EmailCodeRequest;
@@ -29,16 +30,49 @@ public class DormCheckController {
     private final DormCheckService service;
     private final SessionService sessions;
     private final AuthSecurityService authSecurity;
+    private final AdminService admin;
 
-    public DormCheckController(DormCheckService service, SessionService sessions, AuthSecurityService authSecurity) {
+    public DormCheckController(DormCheckService service, SessionService sessions, AuthSecurityService authSecurity, AdminService admin) {
         this.service = service;
         this.sessions = sessions;
         this.authSecurity = authSecurity;
+        this.admin = admin;
     }
 
     @GetMapping("/health")
     Map<String, Boolean> health() {
         return Map.of("ok", true);
+    }
+
+    @GetMapping("/admin/me")
+    Map<String, Object> adminMe(HttpServletRequest request) { return admin.me(request); }
+
+    @GetMapping("/admin/overview")
+    Map<String, Object> adminOverview(HttpServletRequest request) { return admin.overview(request); }
+
+    @GetMapping("/admin/users")
+    Map<String, Object> adminUsers(@RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "") String q, HttpServletRequest request) { return admin.users(request, page, q); }
+
+    @GetMapping("/admin/runs")
+    Map<String, Object> adminRuns(@RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "all") String status, HttpServletRequest request) { return admin.runs(request, page, status); }
+
+    @GetMapping("/admin/queue")
+    Map<String, Object> adminQueue(HttpServletRequest request) { return admin.queue(request); }
+
+    @GetMapping("/admin/audit")
+    Map<String, Object> adminAudit(HttpServletRequest request) { return admin.audit(request); }
+
+    @GetMapping("/admin/features")
+    Map<String, Object> adminFeatures(@RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "all") String feature, HttpServletRequest request) { return admin.featureUsage(request, page, feature); }
+
+    @PutMapping("/admin/roles")
+    Map<String, Object> updateAdminRole(@Valid @RequestBody AdminRoleRequest payload, HttpServletRequest request) {
+        Map<String, Object> session = sessions.require(request);
+        sessions.requireCsrf(request, session);
+        return admin.updateRole(request, payload.userId(), payload.role(), payload.reason());
     }
 
     @PostMapping("/auth/register")
@@ -179,4 +213,6 @@ public class DormCheckController {
     }
 
     public record TotpRequest(@jakarta.validation.constraints.Pattern(regexp="\\d{6}") String code) {}
+    public record AdminRoleRequest(@jakarta.validation.constraints.NotBlank String userId,
+        @jakarta.validation.constraints.NotBlank String role, @jakarta.validation.constraints.NotBlank String reason) {}
 }

@@ -10,10 +10,10 @@ import {
   SegmentedControl, SidebarItem, SidebarSection, StatusBadge, Switch, TextField,
   Toolbar, ToolbarDivider, Tooltip, WindowFrame,
 } from "@seekwd/ui";
-import { dormApi, type ApiAcademicNotice, type ApiAcademicScheduleItem, type ApiCheckQueue, type ApiDashboard, type ApiDevice, type ApiNotification, type ApiRun, type ApiUser } from "./api";
+import { dormApi, type ApiAcademicDataMeta, type ApiAcademicNotice, type ApiAcademicScheduleItem, type ApiCheckQueue, type ApiDashboard, type ApiDevice, type ApiNotification, type ApiRun, type ApiUser, type ApiAdminOverview, type ApiAdminUser, type ApiAdminRun, type ApiAdminQueueItem, type ApiAdminFeatureUse, type ApiAdminAudit } from "./api";
 import { DEFAULT_INTERFACE_SETTINGS, WorkspaceSettings, type InterfaceAccent, type InterfaceDensity, type InterfaceLayout, type InterfaceSettingsValue, type InterfaceTheme } from "./WorkspaceSettings";
 
-type Page = "overview" | "history" | "notices" | "timetable" | "schedule" | "account";
+type Page = "overview" | "history" | "notices" | "timetable" | "schedule" | "account" | "admin";
 type Result = "success" | "failure" | "running";
 type CheckRecord = { id: string | number; time: string; status: Exclude<Result, "running">; message: string; duration: string };
 type AuthMode = "login" | "register";
@@ -122,10 +122,12 @@ export function App() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyRevision, setHistoryRevision] = useState(0);
   const [academicNotices, setAcademicNotices] = useState<ApiAcademicNotice[]>([]);
+  const [academicNoticesMeta, setAcademicNoticesMeta] = useState<ApiAcademicDataMeta | null>(null);
   const [academicNoticesLoading, setAcademicNoticesLoading] = useState(false);
   const [academicNoticesError, setAcademicNoticesError] = useState("");
   const [academicNoticesRevision, setAcademicNoticesRevision] = useState(0);
   const [academicSchedule, setAcademicSchedule] = useState<ApiAcademicScheduleItem[]>([]);
+  const [academicScheduleMeta, setAcademicScheduleMeta] = useState<ApiAcademicDataMeta | null>(null);
   const [academicScheduleLoading, setAcademicScheduleLoading] = useState(false);
   const [academicScheduleError, setAcademicScheduleError] = useState("");
   const [academicScheduleRevision, setAcademicScheduleRevision] = useState(0);
@@ -137,6 +139,7 @@ export function App() {
   const [accountHint, setAccountHint] = useState("");
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>("checking");
   const [user, setUser] = useState<ApiUser | null>(null);
+  const [adminRole, setAdminRole] = useState<"owner" | "operator" | "analyst" | null>(null);
   const [currentDeviceId, setCurrentDeviceId] = useState("");
   const [isChecking, setIsChecking] = useState(false);
   const [checkQueue, setCheckQueue] = useState<ApiCheckQueue>({ active: false });
@@ -152,6 +155,13 @@ export function App() {
   const [interfaceSettings, setInterfaceSettings] = useState<InterfaceSettingsValue>(loadInterfaceSettings);
   const theme = interfaceSettings.theme;
   const [authError, setAuthError] = useState("");
+
+  useEffect(() => {
+    if (!user || runtimeMode !== "connected") { setAdminRole(null); return; }
+    let active = true;
+    dormApi.adminMe().then((result) => { if (active) setAdminRole(result.role); }).catch(() => { if (active) setAdminRole(null); });
+    return () => { active = false; };
+  }, [user?.id, runtimeMode]);
 
   useEffect(() => {
     window.localStorage.setItem(INTERFACE_SETTINGS_KEY, JSON.stringify(interfaceSettings));
@@ -285,7 +295,7 @@ export function App() {
     setAcademicNoticesLoading(true);
     setAcademicNoticesError("");
     dormApi.academicNotices(academicNoticesRevision > 0).then((data) => {
-      if (active) setAcademicNotices(data.items);
+      if (active) { setAcademicNotices(data.items); setAcademicNoticesMeta(data); }
     }).catch((error) => {
       if (active) setAcademicNoticesError(error instanceof Error ? error.message : "无法读取教务公告");
     }).finally(() => {
@@ -300,7 +310,7 @@ export function App() {
     setAcademicScheduleLoading(true);
     setAcademicScheduleError("");
     dormApi.academicSchedule(academicScheduleRevision > 0).then((data) => {
-      if (active) setAcademicSchedule(data.items);
+      if (active) { setAcademicSchedule(data.items); setAcademicScheduleMeta(data); }
     }).catch((error) => {
       if (active) setAcademicScheduleError(error instanceof Error ? error.message : "无法读取我的课表");
     }).finally(() => {
@@ -427,6 +437,10 @@ export function App() {
   };
 
   const navigate = (destination: Page) => {
+    if (destination === "admin" && !adminRole) {
+      setNotice("管理员权限不足");
+      return;
+    }
     if (!user && destination !== "overview") {
       setNotice("登录后才能查看此页面");
       setAuthMode("login");
@@ -487,6 +501,7 @@ export function App() {
         sidebar={<div className="account-sidebar-layout"><div className="dorm-sidebar">
         <SidebarSection label="工作区"><nav className="side-nav" aria-label="工作区导航">
           {pages.filter((item) => ["overview", "notices", "timetable"].includes(item.id)).map((item) => <SidebarItem key={item.id} icon={!user && item.id !== "overview" ? <LockKeyhole /> : item.icon} active={page === item.id} onClick={() => navigate(item.id)}>{item.label}</SidebarItem>)}
+          {adminRole ? <SidebarItem icon={<ShieldCheck />} active={page === "admin"} onClick={() => navigate("admin")}>管理后台</SidebarItem> : null}
         </nav></SidebarSection>
         <div className="sidebar-account">
           {user ? <SidebarItem icon={<UserRound />} active={page === "account"} title={user.email} onClick={() => navigate("account")}><span className="sidebar-account-copy"><strong>{user.name}</strong><small>{user.email}</small></span></SidebarItem> : <Button className="sidebar-signin" variant="quiet" leadingIcon={<UserRound />} onClick={() => setAuthMode("login")}>登录 / 注册</Button>}
@@ -495,7 +510,7 @@ export function App() {
       >
       <div className="dorm-main">
         <header className="topbar">
-          <div className="breadcrumbs"><button className="breadcrumb-link" type="button" onClick={() => navigate("overview")}>工作区</button><span>/</span><strong>{pages.find((item) => item.id === page)?.label}</strong></div>
+          <div className="breadcrumbs"><button className="breadcrumb-link" type="button" onClick={() => navigate("overview")}>工作区</button><span>/</span><strong>{page === "admin" ? "管理后台" : pages.find((item) => item.id === page)?.label}</strong></div>
           <nav className="breadcrumb-actions" aria-label="快捷入口">
             <Tooltip content="查寝记录"><IconButton label="查寝记录" active={page === "history"} onClick={() => navigate("history")}><History /></IconButton></Tooltip>
             <Tooltip content="定时任务"><IconButton label="定时任务" active={page === "schedule"} onClick={() => navigate("schedule")}><CalendarClock /></IconButton></Tooltip>
@@ -507,14 +522,15 @@ export function App() {
         <div className="page-scroll">
           {page === "overview" ? <OverviewPage time={time} scheduled={scheduled} scheduledTime={scheduledTime} scheduleDays={scheduleDays} records={records} successRate={recentSuccessRate} successCount={recentSuccessCount} isChecking={isChecking || checkQueue.active} queue={checkQueue} connected={runtimeMode === "connected"} authenticated={Boolean(user)} accountConfigured={accountConfigured} accountVerified={accountVerified} accountHint={accountHint} onRunCheck={runCheck} onNavigate={navigate} onSignIn={() => setAuthMode("login")} /> : null}
           {page === "history" && user ? <HistoryPage records={historyRecords} filter={recordFilter} page={historyPage} total={historyTotal} totalPages={historyPages} loading={historyLoading} onPageChange={setHistoryPage} onFilter={(filter) => { setRecordFilter(filter); setHistoryPage(1); }} onSelect={setSelectedRecord} onRefresh={() => setHistoryRevision((revision) => revision + 1)} /> : null}
-          {page === "notices" && user ? <AcademicNoticesPage items={academicNotices} loading={academicNoticesLoading} error={academicNoticesError} onRefresh={() => setAcademicNoticesRevision((revision) => revision + 1)} onConfigure={() => navigate("account")} /> : null}
-          {page === "timetable" && user ? <AcademicSchedulePage items={academicSchedule} loading={academicScheduleLoading} error={academicScheduleError} onRefresh={() => setAcademicScheduleRevision((revision) => revision + 1)} onConfigure={() => navigate("account")} /> : null}
+          {page === "notices" && user ? <AcademicNoticesPage items={academicNotices} meta={academicNoticesMeta} loading={academicNoticesLoading} error={academicNoticesError} onRefresh={() => setAcademicNoticesRevision((revision) => revision + 1)} onConfigure={() => navigate("account")} /> : null}
+          {page === "timetable" && user ? <AcademicSchedulePage items={academicSchedule} meta={academicScheduleMeta} loading={academicScheduleLoading} error={academicScheduleError} onRefresh={() => setAcademicScheduleRevision((revision) => revision + 1)} onConfigure={() => navigate("account")} /> : null}
           {page === "schedule" && user ? <SchedulePage scheduled={scheduled} scheduledTime={scheduledTime} scheduleDays={scheduleDays} onScheduledChange={setScheduled} onTimeChange={setScheduledTime} onDaysChange={setScheduleDays} onSave={saveSchedule} connected={runtimeMode === "connected"} accountConfigured={accountConfigured} accountVerified={accountVerified} /> : null}
           {page === "account" && user ? <AccountPage section={accountSection} onSectionChange={setAccountSection} accountHint={accountHint} configured={accountConfigured} verified={accountVerified} currentDeviceId={currentDeviceId} onNotice={setNotice} onSave={saveAccount} onNotificationsChanged={() => void refreshNotifications()} onVerify={async () => {
             if (runtimeMode !== "connected") { setNotice("演示模式无法连接校园平台验证账号"); return; }
             try { const result = await dormApi.verifyCredentials(); setAccountVerified(result.verified); setNotice(result.message); void refreshNotifications(); }
             catch (error) { setNotice(error instanceof Error ? error.message : "账号验证失败"); }
           }} connected={runtimeMode === "connected"} /> : null}
+          {page === "admin" && adminRole ? <AdminPage role={adminRole} /> : null}
         </div>
         <footer className="site-footer">
           <span className="site-footer__credit">本系统由 <strong>@NJHTR</strong> 开发</span>
@@ -575,6 +591,67 @@ function NotificationCenter({ authenticated, items, unreadCount, loading, onRefr
   </div>;
 }
 
+function AdminPage({ role }: { role: "owner" | "operator" | "analyst" }) {
+  const [overview, setOverview] = useState<ApiAdminOverview | null>(null);
+  const [users, setUsers] = useState<ApiAdminUser[]>([]);
+  const [userTotal, setUserTotal] = useState(0);
+  const [userPage, setUserPage] = useState(1);
+  const [userQuery, setUserQuery] = useState("");
+  const [userSearchInput, setUserSearchInput] = useState("");
+  const [runs, setRuns] = useState<ApiAdminRun[]>([]);
+  const [queue, setQueue] = useState<ApiAdminQueueItem[]>([]);
+  const [features, setFeatures] = useState<ApiAdminFeatureUse[]>([]);
+  const [audit, setAudit] = useState<ApiAdminAudit[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [roleBusy, setRoleBusy] = useState("");
+  const refresh = async () => {
+    setLoading(true); setError("");
+    try {
+      const [summary, userRows, runRows, queueRows, featureRows, auditRows] = await Promise.all([
+        dormApi.adminOverview(), role === "analyst" ? Promise.resolve({ items: [] as ApiAdminUser[], total: 0 }) : dormApi.adminUsers(userPage, userQuery),
+        role === "analyst" ? Promise.resolve({ items: [] as ApiAdminRun[] }) : dormApi.adminRuns(),
+        role === "analyst" ? Promise.resolve({ items: [] as ApiAdminQueueItem[] }) : dormApi.adminQueue(),
+        role === "analyst" ? Promise.resolve({ items: [] as ApiAdminFeatureUse[] }) : dormApi.adminFeatures(),
+        role === "owner" ? dormApi.adminAudit() : Promise.resolve({ items: [] as ApiAdminAudit[] }),
+      ]);
+      setOverview(summary); setUsers(userRows.items); setUserTotal(userRows.total); setRuns(runRows.items); setQueue(queueRows.items); setFeatures(featureRows.items); setAudit(auditRows.items);
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "无法读取管理员数据"); }
+    finally { setLoading(false); }
+  };
+  const changeRole = async (user: ApiAdminUser, role: "none" | "owner" | "operator" | "analyst") => {
+    const reason = window.prompt(`设置 ${user.name} 的管理员角色。请填写操作原因：`);
+    if (!reason?.trim()) return;
+    setRoleBusy(user.id);
+    try { await dormApi.adminSetRole(user.id, role, reason.trim()); await refresh(); }
+    catch (reasonError) { setError(reasonError instanceof Error ? reasonError.message : "角色更新失败"); }
+    finally { setRoleBusy(""); }
+  };
+  useEffect(() => { void refresh(); }, [role, userPage, userQuery]);
+  if (loading && !overview) return <div className="page-content admin-page"><div className="admin-loading">正在读取运营数据…</div></div>;
+  if (error && !overview) return <div className="page-content admin-page"><Notice title="管理数据暂不可用" tone="warning">{error}</Notice></div>;
+  const stats = overview?.users;
+  const today = overview?.runs_today;
+  return <div className="page-content admin-page">
+    <div className="page-heading"><div><div className="eyebrow">ADMINISTRATION</div><h1>管理后台</h1><p>只读运营视图 · 当前角色：{role === "owner" ? "所有者" : role === "operator" ? "运维管理员" : "分析员"}</p></div><Button size="small" leadingIcon={<RefreshCw />} onClick={() => void refresh()}>刷新数据</Button></div>
+    {error ? <Notice title="部分数据读取失败" tone="warning">{error}</Notice> : null}
+    <div className="stats-grid admin-stats">
+      <StatCard label="注册用户" value={String(stats?.total ?? 0)} detail={`已配置认证 ${stats?.configured ?? 0} 人`} icon={<UserRound />} tone="green" />
+      <StatCard label="已验证认证" value={String(stats?.verified ?? 0)} detail={`已启用定时 ${stats?.scheduled ?? 0} 人`} icon={<ShieldCheck />} tone="teal" />
+      <StatCard label="今日查寝" value={String(today?.total ?? 0)} detail={`成功 ${today?.successes ?? 0} · 失败 ${today?.failures ?? 0}`} icon={<CheckCheck />} tone="blue" />
+      <StatCard label="当前队列" value={String((overview?.queue.queued ?? 0) + (overview?.queue.running ?? 0) + (overview?.queue.retry_wait ?? 0))} detail={`等待 ${overview?.queue.queued ?? 0} · 执行 ${overview?.queue.running ?? 0}`} icon={<Activity />} tone="amber" />
+    </div>
+    {role !== "analyst" ? <><div className="admin-grid">
+      <section className="surface-card admin-panel"><div className="section-heading"><div><span className="section-kicker">账户状态</span><h2>用户配置与权限</h2></div><form className="admin-search" onSubmit={(event) => { event.preventDefault(); setUserPage(1); setUserQuery(userSearchInput.trim()); }}><input aria-label="搜索用户邮箱或名称" placeholder="搜索邮箱或名称" value={userSearchInput} onChange={(event) => setUserSearchInput(event.target.value)} /><Button size="small" type="submit">搜索</Button></form></div><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>用户</th><th>校园认证</th><th>定时查寝</th><th>最近结果</th>{role === "owner" ? <th>后台角色</th> : null}</tr></thead><tbody>{users.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.email}</small></td><td><StatusBadge tone={item.credential_verified ? "success" : item.credential_configured ? "warning" : "neutral"} dot>{item.credential_verified ? "已验证" : item.credential_configured ? "已配置" : "未配置"}</StatusBadge></td><td>{item.schedule_enabled ? "已启用" : "已暂停"}</td><td>{item.last_run_status === "success" ? "成功" : item.last_run_status === "failure" ? "失败" : "暂无"}</td>{role === "owner" ? <td><select className="admin-role-select" aria-label={`设置 ${item.name} 的后台角色`} value={item.admin_role ?? "none"} disabled={roleBusy === item.id} onChange={(event) => void changeRole(item, event.target.value as "none" | "owner" | "operator" | "analyst")}><option value="none">无权限</option><option value="analyst">分析员</option><option value="operator">运维管理员</option><option value="owner">所有者</option></select></td> : null}</tr>)}</tbody></table></div><footer className="admin-pagination"><span>共 {userTotal} 位用户</span><Button size="small" variant="quiet" disabled={userPage <= 1} onClick={() => setUserPage((pageNumber) => pageNumber - 1)}>上一页</Button><span>{userPage} / {Math.max(1, Math.ceil(userTotal / 25))}</span><Button size="small" variant="quiet" disabled={userPage >= Math.ceil(userTotal / 25)} onClick={() => setUserPage((pageNumber) => pageNumber + 1)}>下一页</Button></footer></section>
+      <section className="surface-card admin-panel"><div className="section-heading"><div><span className="section-kicker">任务调度</span><h2>当前队列</h2></div></div>{queue.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>用户</th><th>来源</th><th>状态</th><th>尝试</th></tr></thead><tbody>{queue.slice(0, 12).map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.email}</small></td><td>{item.trigger === "scheduled" ? "定时" : "手动"}</td><td><StatusBadge tone={item.status === "running" ? "success" : "warning"} dot>{item.status === "running" ? "执行中" : item.status === "retry_wait" ? "等待重试" : "排队中"}</StatusBadge></td><td>{item.attempts} / {item.max_attempts}</td></tr>)}</tbody></table></div> : <div className="admin-empty">当前没有等待中的任务</div>}</section>
+    </div>
+    <div className="admin-grid">
+      <section className="surface-card admin-panel"><div className="section-heading"><div><span className="section-kicker">查寝记录</span><h2>最近执行结果</h2></div></div><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>用户</th><th>结果</th><th>原因</th><th>时间</th></tr></thead><tbody>{runs.slice(0, 12).map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.email}</small></td><td><StatusBadge tone={item.status === "success" ? "success" : "danger"} dot>{item.status === "success" ? "成功" : "失败"}</StatusBadge></td><td className="admin-message">{item.message || "—"}</td><td>{formatNotificationTime(item.time)}</td></tr>)}</tbody></table></div></section>
+      <section className="surface-card admin-panel"><div className="section-heading"><div><span className="section-kicker">功能使用</span><h2>课表与公告</h2></div></div><div className="admin-usage-summary"><div><strong>{overview?.feature_use_today.timetable ?? 0}</strong><span>今日课表访问</span></div><div><strong>{overview?.feature_use_today.notices ?? 0}</strong><span>今日公告访问</span></div></div><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>用户</th><th>功能</th><th>结果</th><th>时间</th></tr></thead><tbody>{features.slice(0, 8).map((item, index) => <tr key={`${item.time}-${item.email}-${index}`}><td><strong>{item.name}</strong><small>{item.email}</small></td><td>{item.feature === "schedule" ? "课表" : "公告"}</td><td>{item.result === "success" ? "成功" : "失败"}</td><td>{formatNotificationTime(item.time)}</td></tr>)}</tbody></table></div></section>
+    </div>{role === "owner" ? <section className="surface-card admin-panel"><div className="section-heading"><div><span className="section-kicker">安全审计</span><h2>管理员访问与操作</h2></div></div><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>管理员</th><th>操作</th><th>来源地址</th><th>时间</th></tr></thead><tbody>{audit.slice(0, 20).map((item, index) => <tr key={`${item.time}-${index}`}><td>{item.admin || "管理员账号已不存在"}</td><td className="admin-message">{item.action}</td><td>{item.remote_address}</td><td>{formatNotificationTime(item.time)}</td></tr>)}</tbody></table></div></section> : null}</> : null}
+  </div>;
+}
+
 function OverviewPage({ time, scheduled, scheduledTime, scheduleDays, records, successRate, successCount, isChecking, queue, connected, authenticated, accountConfigured, accountVerified, accountHint, onRunCheck, onNavigate, onSignIn }: { time: Date; scheduled: boolean; scheduledTime: string; scheduleDays: number[]; records: CheckRecord[]; successRate: number; successCount: number; isChecking: boolean; queue: ApiCheckQueue; connected: boolean; authenticated: boolean; accountConfigured: boolean; accountVerified: boolean; accountHint: string; onRunCheck: () => void; onNavigate: (page: Page) => void; onSignIn: () => void }) {
   const latest = records[0];
   return <div className="page-content overview-page">
@@ -624,9 +701,16 @@ function HistoryPage({ records, filter, page, total, totalPages, loading, onPage
   </div>;
 }
 
-function AcademicNoticesPage({ items, loading, error, onRefresh, onConfigure }: { items: ApiAcademicNotice[]; loading: boolean; error: string; onRefresh: () => void; onConfigure: () => void }) {
+function academicCacheLabel(meta: ApiAcademicDataMeta | null) {
+  if (!meta?.fetched_at) return "尚未同步";
+  const time = new Date(meta.fetched_at).toLocaleString("zh-CN", { hour12: false });
+  const status = meta.cache_status === "stale-fallback" ? " · 上游暂不可用，显示最近数据" : meta.cache_status === "stale" ? " · 后台更新中" : "";
+  return `上次同步 ${time}${status}`;
+}
+
+function AcademicNoticesPage({ items, meta, loading, error, onRefresh, onConfigure }: { items: ApiAcademicNotice[]; meta: ApiAcademicDataMeta | null; loading: boolean; error: string; onRefresh: () => void; onConfigure: () => void }) {
   return <div className="page-content">
-    <div className="page-heading"><div><div className="eyebrow">CAMPUS NOTICES</div><h1>教务公告</h1><p>融合门户中的教务通知。</p></div><Button leadingIcon={<RefreshCw />} disabled={loading} onClick={onRefresh}>刷新公告</Button></div>
+      <div className="page-heading"><div><div className="eyebrow">CAMPUS NOTICES</div><h1>教务公告</h1><p>融合门户中的教务通知。<span className="academic-sync-note">{academicCacheLabel(meta)}</span></p></div><Button leadingIcon={<RefreshCw />} disabled={loading} onClick={onRefresh}>刷新公告</Button></div>
     <section className="surface-card notices-card" aria-busy={loading}>
       {loading && !items.length ? <div className="empty-state"><span className="loading-dot" /><strong>正在读取公告</strong></div> : null}
       {!loading && error ? <div className="empty-state notices-error"><CircleAlert /><strong>公告暂不可用</strong><span>{error}</span><Button variant="quiet" size="small" onClick={onConfigure}>查看校园账号设置</Button><Button variant="quiet" size="small" leadingIcon={<RefreshCw />} onClick={onRefresh}>重试</Button></div> : null}
@@ -773,7 +857,7 @@ function MonthTimetable({ courses, monthDate, termStart, maxWeek }: { courses: T
   </div></div>;
 }
 
-function AcademicSchedulePage({ items, loading, error, onRefresh, onConfigure }: { items: ApiAcademicScheduleItem[]; loading: boolean; error: string; onRefresh: () => void; onConfigure: () => void }) {
+function AcademicSchedulePage({ items, meta, loading, error, onRefresh, onConfigure }: { items: ApiAcademicScheduleItem[]; meta: ApiAcademicDataMeta | null; loading: boolean; error: string; onRefresh: () => void; onConfigure: () => void }) {
   const courses = normalizeTimetable(items);
   const weeks = [...new Set(courses.flatMap((course) => course.weeksNumbers))].sort((a, b) => a - b);
   const maxWeek = weeks.length ? weeks[weeks.length - 1] : currentAcademicWeek();
@@ -792,7 +876,7 @@ function AcademicSchedulePage({ items, loading, error, onRefresh, onConfigure }:
   const canGoNextMonth = monthDate.getFullYear() < maxMonth.getFullYear() || (monthDate.getFullYear() === maxMonth.getFullYear() && monthDate.getMonth() < maxMonth.getMonth());
   const jumpToday = () => { setWeek(Math.min(currentAcademicWeek(), maxWeek)); setMonthDate(new Date()); setView("week"); };
   return <div className="page-content">
-    <div className="page-heading timetable-heading"><div><div className="eyebrow">MY TIMETABLE</div><h1>我的课表</h1><p>周末补课、分周课程和集中实践课都会按教务系统原始周次展示。</p></div><div className="timetable-heading-actions"><Button variant="quiet" leadingIcon={<CalendarDays />} onClick={jumpToday}>今天</Button><Button leadingIcon={<RefreshCw />} disabled={loading} onClick={onRefresh}>刷新课表</Button></div></div>
+    <div className="page-heading timetable-heading"><div><div className="eyebrow">MY TIMETABLE</div><h1>我的课表</h1><p>周末补课、分周课程和集中实践课都会按教务系统原始周次展示。<span className="academic-sync-note">{academicCacheLabel(meta)}</span></p></div><div className="timetable-heading-actions"><Button variant="quiet" leadingIcon={<CalendarDays />} onClick={jumpToday}>今天</Button><Button leadingIcon={<RefreshCw />} disabled={loading} onClick={onRefresh}>刷新课表</Button></div></div>
     <section className="surface-card timetable-card" aria-busy={loading}>
       {loading && !items.length ? <div className="empty-state"><span className="loading-dot" /><strong>正在读取课表</strong></div> : null}
       {!loading && error ? <div className="empty-state notices-error"><CircleAlert /><strong>课表暂不可用</strong><span>{error}</span><Button variant="quiet" size="small" onClick={onConfigure}>查看校园账号设置</Button><Button variant="quiet" size="small" leadingIcon={<RefreshCw />} onClick={onRefresh}>重试</Button></div> : null}

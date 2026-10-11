@@ -129,3 +129,25 @@ CREATE TABLE IF NOT EXISTS auth_device_sessions (
   token_hash TEXT PRIMARY KEY REFERENCES sessions(token_hash) ON DELETE CASCADE,
   device_id TEXT NOT NULL REFERENCES auth_devices(id) ON DELETE CASCADE
 );
+CREATE TABLE IF NOT EXISTS admin_accounts (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  role TEXT NOT NULL CHECK(role IN ('none','owner','operator','analyst')),
+  created_at TEXT NOT NULL,
+  created_by TEXT
+);
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+  id TEXT PRIMARY KEY,
+  admin_user_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  remote_address TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS admin_audit_time ON admin_audit_logs(created_at DESC);
+CREATE TABLE IF NOT EXISTS feature_usage_events (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  feature TEXT NOT NULL CHECK(feature IN ('notices','schedule')),
+  result TEXT NOT NULL CHECK(result IN ('success','failure')),
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS feature_usage_time ON feature_usage_events(feature,created_at DESC);

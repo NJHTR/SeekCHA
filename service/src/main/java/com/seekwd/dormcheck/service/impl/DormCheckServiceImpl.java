@@ -27,6 +27,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -47,6 +48,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import com.seekwd.dormcheck.service.CheckQueueService;
 import com.seekwd.dormcheck.service.CampusAccessGuard;
 import com.seekwd.dormcheck.service.AcademicCacheService;
+import com.seekwd.dormcheck.service.AdminService;
 import com.seekwd.dormcheck.mapper.CheckQueueMapper;
 import com.seekwd.dormcheck.domain.entity.CredentialEntity;
 import com.seekwd.dormcheck.domain.entity.RunEntity;
@@ -88,6 +90,7 @@ public class DormCheckServiceImpl implements DormCheckService {
     private final ObjectProvider<CheckQueueService> checkQueue;
     private final CampusAccessGuard campusAccess;
     private final CheckQueueMapper queueMapper;
+    private final AdminService admin;
 
     public DormCheckServiceImpl(UserMapper users, ScheduleMapper schedules, CredentialMapper credentialsMapper,
         DeviceMapper devicesMapper, SessionMapper sessionMapper, RunMapper runsMapper,
@@ -97,7 +100,7 @@ public class DormCheckServiceImpl implements DormCheckService {
         ObjectProvider<CheckScheduler> scheduler, AuthSecurityService authSecurity,
         JavaMailSender mail, @Value("${dormcheck.mail-from}") String mailFrom,
         ObjectProvider<CheckQueueService> checkQueue, CampusAccessGuard campusAccess, CheckQueueMapper queueMapper,
-        AcademicCacheService academicCache) {
+        AcademicCacheService academicCache, AdminService admin) {
         this.users = users;
         this.schedules = schedules;
         this.credentialsMapper = credentialsMapper;
@@ -120,6 +123,7 @@ public class DormCheckServiceImpl implements DormCheckService {
         this.campusAccess = campusAccess;
         this.queueMapper = queueMapper;
         this.academicCache = academicCache;
+        this.admin = admin;
     }
 
     @Transactional
@@ -297,18 +301,27 @@ public class DormCheckServiceImpl implements DormCheckService {
         }
         String credentialVersion = summary.updatedAt == null ? "" : summary.updatedAt;
         if (forceRefresh) limiter.check("academic-notices-refresh", request.getRemoteAddr(), userId, 3, 600);
-        return academicCache.get(userId, "notices", credentialVersion, forceRefresh, () -> {
-            limiter.check("academic-notices", request.getRemoteAddr(), userId, 12, 3600);
-            CampusCredentials credentials = loadCredentials(userId);
-            Map<String, Object> result = campusAccess.call(() -> engine.notices(credentials.account(), credentials.password()));
-            if (!Boolean.TRUE.equals(result.get("ok"))) {
-                String message = String.valueOf(result.getOrDefault("message", "教务公告获取失败，请稍后重试。"));
-                throw new ApiException(HttpStatus.BAD_GATEWAY, message);
-            }
-            Object items = result.get("items");
-            if (!(items instanceof List<?>)) items = List.of();
-            return Map.of("items", items, "fetched_at", security.now());
-        });
+        try {
+            Map<String, Object> result = academicCache.get(userId, "notices", credentialVersion, "notices-v1", forceRefresh, () -> {
+                limiter.check("academic-notices", request.getRemoteAddr(), userId, 12, 3600);
+                CampusCredentials credentials = loadCredentials(userId);
+                Map<String, Object> upstream = campusAccess.call(() -> engine.notices(credentials.account(), credentials.password()));
+                if (!Boolean.TRUE.equals(upstream.get("ok"))) {
+                    String message = String.valueOf(upstream.getOrDefault("message", "教务公告获取失败，请稍后重试。"));
+                    throw new ApiException(HttpStatus.BAD_GATEWAY, message);
+                }
+                Object items = upstream.get("items");
+                if (!(items instanceof List<?>)) items = List.of();
+                return Map.of("items", items, "fetched_at", security.now(),
+                    "data_complete", Boolean.TRUE.equals(upstream.get("data_complete")),
+                    "academic_scope", "notices-v1");
+            });
+            admin.recordFeatureUse(userId, "notices", true);
+            return result;
+        } catch (RuntimeException error) {
+            admin.recordFeatureUse(userId, "notices", false);
+            throw error;
+        }
     }
 
     public Map<String, Object> academicSchedule(Map<String, Object> session, HttpServletRequest request) {
@@ -323,18 +336,28 @@ public class DormCheckServiceImpl implements DormCheckService {
         }
         String credentialVersion = summary.updatedAt == null ? "" : summary.updatedAt;
         if (forceRefresh) limiter.check("academic-schedule-refresh", request.getRemoteAddr(), userId, 3, 600);
-        return academicCache.get(userId, "schedule", credentialVersion, forceRefresh, () -> {
-            limiter.check("academic-schedule-v2", request.getRemoteAddr(), userId, 12, 3600);
-            CampusCredentials credentials = loadCredentials(userId);
-            Map<String, Object> result = campusAccess.call(() -> engine.academicSchedule(credentials.account(), credentials.password()));
-            if (!Boolean.TRUE.equals(result.get("ok"))) {
-                String message = String.valueOf(result.getOrDefault("message", "我的课表获取失败，请稍后重试。"));
-                throw new ApiException(HttpStatus.BAD_GATEWAY, message);
-            }
-            Object items = result.get("items");
-            if (!(items instanceof List<?>)) items = List.of();
-            return Map.of("items", items, "fetched_at", security.now());
-        });
+        String academicScope = currentAcademicScope();
+        try {
+            Map<String, Object> result = academicCache.get(userId, "schedule", credentialVersion, academicScope, forceRefresh, () -> {
+                limiter.check("academic-schedule-v2", request.getRemoteAddr(), userId, 12, 3600);
+                CampusCredentials credentials = loadCredentials(userId);
+                Map<String, Object> upstream = campusAccess.call(() -> engine.academicSchedule(credentials.account(), credentials.password()));
+                if (!Boolean.TRUE.equals(upstream.get("ok"))) {
+                    String message = String.valueOf(upstream.getOrDefault("message", "我的课表获取失败，请稍后重试。"));
+                    throw new ApiException(HttpStatus.BAD_GATEWAY, message);
+                }
+                Object items = upstream.get("items");
+                if (!(items instanceof List<?>)) items = List.of();
+                return Map.of("items", items, "fetched_at", security.now(),
+                    "data_complete", Boolean.TRUE.equals(upstream.get("data_complete")),
+                    "academic_scope", academicScope);
+            });
+            admin.recordFeatureUse(userId, "schedule", true);
+            return result;
+        } catch (RuntimeException error) {
+            admin.recordFeatureUse(userId, "schedule", false);
+            throw error;
+        }
     }
 
     public Map<String, Object> markNotificationsRead(Map<String, Object> session) {
@@ -544,6 +567,13 @@ public class DormCheckServiceImpl implements DormCheckService {
 
     private String userId(Map<String, Object> session) {
         return (String) session.get("user_id");
+    }
+
+    private String currentAcademicScope() {
+        ZonedDateTime now = Instant.now().atZone(ZoneId.of("Asia/Shanghai"));
+        int year = now.getMonthValue() >= 8 ? now.getYear() : now.getYear() - 1;
+        String term = now.getMonthValue() >= 8 ? "3" : "12";
+        return year + "-" + term;
     }
 
     private Map<String, Object> authResponse(String id, String email, String name, String csrf, String currentDeviceId) {

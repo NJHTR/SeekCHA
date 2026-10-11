@@ -16,6 +16,19 @@ export type ApiDashboard = {
 export type ApiDevice = { id: string; name: string; platform: string; language: string; timezone: string; screen_size: string; hardware_threads: number | null; device_memory: number | null; created_at: string; last_seen_at: string; current: boolean };
 export type ApiAcademicNotice = { title: string; date: string; url: string };
 export type ApiAcademicScheduleItem = { course: string; teacher: string; room: string; weekday: string; periods: string; weeks: string; type: string };
+export type ApiAcademicDataMeta = { fetched_at: string; cache_status: "fresh" | "stale" | "refreshed" | "stale-fallback"; academic_scope?: string };
+export type ApiAdminOverview = {
+  admin: { role: "owner" | "operator" | "analyst"; name: string };
+  users: { total: number; configured: number; verified: number; scheduled: number };
+  runs_today: { total: number; successes: number; failures: number };
+  queue: { queued: number; running: number; retry_wait: number };
+  feature_use_today: { timetable: number; notices: number };
+};
+export type ApiAdminUser = { id: string; email: string; name: string; registered_at: string; credential_configured: boolean; credential_verified: boolean; schedule_enabled: boolean; last_run_status: string | null; last_run_at: string | null; admin_role: "owner" | "operator" | "analyst" | null };
+export type ApiAdminRun = { id: string; email: string; name: string; status: "success" | "failure"; message: string; time: string; duration_ms: number };
+export type ApiAdminQueueItem = { id: string; email: string; name: string; trigger: string; status: string; attempts: number; max_attempts: number; created_at: string; not_before: string; started_at: string; reason: string };
+export type ApiAdminFeatureUse = { feature: "notices" | "schedule"; result: "success" | "failure"; time: string; name: string; email: string };
+export type ApiAdminAudit = { action: string; remote_address: string; time: string; admin: string };
 
 let csrfToken = "";
 let activeUserId = "anonymous";
@@ -155,7 +168,7 @@ export const dormApi = {
   checks: (page: number, status: ApiCheckPage["status"]) => request<ApiCheckPage>(`/checks?page=${page}&status=${status}`),
   notifications: () => request<{ items: ApiNotification[]; unread_count: number }>("/notifications"),
   async academicNotices(refresh = false) {
-    type Response = { items: ApiAcademicNotice[]; fetched_at: string };
+    type Response = { items: ApiAcademicNotice[] } & ApiAcademicDataMeta;
     const ownerUserId = activeUserId;
     const key = browserCacheKey("notices");
     if (!refresh) {
@@ -174,7 +187,7 @@ export const dormApi = {
     return pending;
   },
   async academicSchedule(refresh = false) {
-    type Response = { items: ApiAcademicScheduleItem[]; fetched_at: string };
+    type Response = { items: ApiAcademicScheduleItem[] } & ApiAcademicDataMeta;
     const ownerUserId = activeUserId;
     const key = browserCacheKey("schedule");
     if (!refresh) {
@@ -208,4 +221,12 @@ export const dormApi = {
   revokeDevice: (id: string) => request<{ revoked: boolean }>(`/auth/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
   beginTotp: () => request<{ secret: string; otpauth_url: string }>("/auth/totp/setup", { method: "POST" }),
   confirmTotp: (code: string) => request<{ enabled: boolean }>("/auth/totp/confirm", { method: "POST", body: JSON.stringify({ code }) }),
+  adminMe: () => request<{ role: "owner" | "operator" | "analyst"; name: string }>("/admin/me"),
+  adminOverview: () => request<ApiAdminOverview>("/admin/overview"),
+  adminUsers: (page = 1, query = "") => request<{ items: ApiAdminUser[]; page: number; page_size: number; total: number }>(`/admin/users?page=${page}&q=${encodeURIComponent(query)}`),
+  adminRuns: (page = 1, status: "all" | "success" | "failure" = "all") => request<{ items: ApiAdminRun[]; page: number; page_size: number; total: number }>(`/admin/runs?page=${page}&status=${status}`),
+  adminQueue: () => request<{ items: ApiAdminQueueItem[] }>("/admin/queue"),
+  adminAudit: () => request<{ items: ApiAdminAudit[] }>("/admin/audit"),
+  adminFeatures: (page = 1, feature: "all" | "notices" | "schedule" = "all") => request<{ items: ApiAdminFeatureUse[]; page: number; page_size: number; total: number }>(`/admin/features?page=${page}&feature=${feature}`),
+  adminSetRole: (userId: string, role: "none" | "owner" | "operator" | "analyst", reason: string) => request<{ updated: boolean; role: string }>("/admin/roles", { method: "PUT", body: JSON.stringify({ userId, role, reason }) }),
 };
