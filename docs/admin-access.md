@@ -12,7 +12,7 @@
 2. 将密钥暂时配置为服务器环境变量 `DORMCHECK_ADMIN_BOOTSTRAP_TOKEN`，同时正确配置 `DORMCHECK_ADMIN_ALLOWED_CIDRS`。
 3. 重启服务后，从允许的私网来源调用 `POST /api/admin/auth/bootstrap`，提交 `token`、`email`、`name` 和至少 16 位的独立 `password`。邮箱应为 `njhtr1018@gmail.com`。响应会给出 TOTP 密钥和 `otpauth_url`；立即导入验证器并妥善保管。
 4. 调用 `POST /api/admin/auth/bootstrap/confirm`，提交同一 token、邮箱及验证器当前的 6 位动态口令，完成绑定。此接口只允许一次性初始化记录，成功后无法重复启用。
-5. 从服务器环境移除 `DORMCHECK_ADMIN_BOOTSTRAP_TOKEN` 并重启服务。管理员登录使用站点中的“管理员登录”入口，填入独立密码和 TOTP。
+5. 从服务器环境移除 `DORMCHECK_ADMIN_BOOTSTRAP_TOKEN` 并重启服务。管理员登录使用独立管理地址 `/admin`，填入独立密码和 TOTP；普通用户主站不会显示管理员入口。
 
 初始化请求示例：
 

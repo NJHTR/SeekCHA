@@ -110,7 +110,7 @@ export function App() {
   const [page, setPage] = useState<Page>("overview");
   const [accountSection, setAccountSection] = useState<"campus" | "security" | "devices">("campus");
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
-  const [adminLoginOpen, setAdminLoginOpen] = useState(false);
+  const [adminLoginOpen, setAdminLoginOpen] = useState(() => typeof window !== "undefined" && window.location.pathname === "/admin");
   const [adminLoginError, setAdminLoginError] = useState("");
   const [adminSetupOpen, setAdminSetupOpen] = useState(false);
   const [adminSetupError, setAdminSetupError] = useState("");
@@ -419,7 +419,10 @@ export function App() {
           submittedJob.current = result.id;
           setCheckQueue({ active: true, id: result.id, status: result.status });
         }
-        else void refreshDashboard().catch(() => {});
+        else {
+          void Promise.allSettled([refreshDashboard(), refreshNotifications()]);
+          setHistoryRevision((revision) => revision + 1);
+        }
         setNotice(result.message);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "查寝任务未能启动");
@@ -552,7 +555,7 @@ export function App() {
           <Tooltip content={theme === "dark" ? "切换浅色外观" : "切换深色外观"}><IconButton label={theme === "dark" ? "切换浅色外观" : "切换深色外观"} onClick={() => setInterfaceSettings((current) => ({ ...current, theme: current.theme === "dark" ? "light" : "dark" }))}>{theme === "dark" ? <Sun /> : <Moon />}</IconButton></Tooltip>
           <NotificationCenter authenticated={Boolean(user)} items={notificationItems} unreadCount={notificationUnread} loading={notificationsLoading} onRefresh={refreshNotifications} onMarkAllRead={markAllNotificationsRead} onOpenNotification={openNotification} onSignIn={() => setAuthMode("login")} onViewAll={() => navigate("history")} />
           <ToolbarDivider />
-          {adminRole ? <Menu label="管理员操作" icon={<ShieldCheck />} iconOnly items={[{ label: "退出管理后台", icon: <LogOut />, onSelect: () => void signOutAdmin() }]} /> : <Button size="small" variant="quiet" leadingIcon={<ShieldCheck />} onClick={() => { setAdminLoginError(""); setAdminLoginOpen(true); }}>管理员登录</Button>}
+          {adminRole ? <Menu label="管理员操作" icon={<ShieldCheck />} iconOnly items={[{ label: "退出管理后台", icon: <LogOut />, onSelect: () => void signOutAdmin() }]} /> : null}
           {user ? <Menu label="账户操作" icon={<UserRound />} iconOnly items={[{ label: "退出登录", icon: <LogOut />, onSelect: () => void signOut() }]} /> : <Button size="small" variant="primary" onClick={() => setAuthMode("login")}>登录 / 注册</Button>}
         </Toolbar>}
         sidebar={<div className="account-sidebar-layout"><div className="dorm-sidebar">
@@ -601,11 +604,11 @@ export function App() {
         {authMode ? <AuthPage mode={authMode} onModeChange={(mode) => { setAuthError(""); setAuthMode(mode); }} onSubmit={handleAuth} onSendCode={sendRegistrationCode} onNotice={setNotice} error={authError} allowDemoReturn={runtimeMode === "demo"} /> : null}
       </Dialog>
       <Dialog open={adminLoginOpen} title="管理员登录" description="使用独立管理员账号与验证器动态口令。" onClose={() => setAdminLoginOpen(false)} className="auth-dialog">
-        <AdminLoginForm error={adminLoginError} onSubmit={handleAdminLogin} onSetup={() => { setAdminLoginOpen(false); setAdminSetupError(""); setAdminSetupOpen(true); }} />
+        <AdminLoginForm error={adminLoginError} onSubmit={handleAdminLogin} onSetup={() => { setAdminLoginOpen(false); setAdminSetupError(""); setAdminSetupOpen(true); }} allowBootstrap={import.meta.env.DEV} />
       </Dialog>
-      <Dialog open={adminSetupOpen} title="首次初始化管理员" description="仅限配置的局域网或私有网络访问。初始化密钥不会保存到浏览器。" onClose={() => setAdminSetupOpen(false)} className="auth-dialog">
+      {import.meta.env.DEV ? <Dialog open={adminSetupOpen} title="首次初始化管理员" description="仅限配置的局域网或私有网络访问。初始化密钥不会保存到浏览器。" onClose={() => setAdminSetupOpen(false)} className="auth-dialog">
         <AdminBootstrapForm error={adminSetupError} onSubmit={handleAdminBootstrap} />
-      </Dialog>
+      </Dialog> : null}
       <Dialog open={Boolean(selectedRecord)} title="查寝记录详情" description={runtimeMode === "demo" ? "演示记录，不代表服务器上的实际任务结果。" : "服务器任务的执行结果。"} onClose={() => setSelectedRecord(null)} footer={<Button variant="primary" onClick={() => setSelectedRecord(null)}>完成</Button>}>
         {selectedRecord ? <div className="record-detail"><DetailRow label="执行时间" value={selectedRecord.time} /><DetailRow label="结果" value={selectedRecord.status === "success" ? "成功" : "失败"} /><DetailRow label="任务消息" value={selectedRecord.message} /><DetailRow label="执行耗时" value={selectedRecord.duration} /></div> : null}
       </Dialog>
@@ -1071,7 +1074,7 @@ function TotpSettings({ onNotificationsChanged }: { onNotificationsChanged: () =
 
 type AuthOutcome = { complete: true; user: ApiUser | null } | { complete: false; email: string; totpRequired: boolean };
 
-function AdminLoginForm({ error, onSubmit, onSetup }: { error: string; onSubmit: (email: string, password: string, code: string) => Promise<void>; onSetup: () => void }) {
+function AdminLoginForm({ error, onSubmit, onSetup, allowBootstrap }: { error: string; onSubmit: (email: string, password: string, code: string) => Promise<void>; onSetup: () => void; allowBootstrap: boolean }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -1086,7 +1089,7 @@ function AdminLoginForm({ error, onSubmit, onSetup }: { error: string; onSubmit:
     <TextField label="验证器动态口令" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value)} maxLength={6} required />
     {error ? <Notice title="登录未完成" tone="danger">{error}</Notice> : null}
     <Button type="submit" variant="primary" disabled={busy || !email || password.length < 16 || code.length !== 6}>{busy ? "正在验证…" : "登录管理后台"}</Button>
-  </form><div className="auth-switch">首次使用？<Button variant="quiet" size="small" type="button" onClick={onSetup}>初始化管理员</Button></div><div className="auth-demo-notice"><ShieldCheck />仅允许配置的局域网或私有网络访问。</div></div>;
+  </form>{allowBootstrap ? <div className="auth-switch">本机测试？<Button variant="quiet" size="small" type="button" onClick={onSetup}>初始化管理员</Button></div> : null}<div className="auth-demo-notice"><ShieldCheck />仅允许配置的局域网或私有网络访问。</div></div>;
 }
 
 function AdminBootstrapForm({ error, onSubmit }: { error: string; onSubmit: (values: { token: string; email: string; name: string; password: string; code?: string; phase: "create" | "confirm" }) => Promise<{ created: boolean; admin_id: string; secret: string; otpauth_url: string } | null> }) {
