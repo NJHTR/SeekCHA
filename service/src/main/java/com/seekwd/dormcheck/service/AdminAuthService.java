@@ -57,6 +57,7 @@ public class AdminAuthService {
 
     public Map<String, Object> bootstrap(String token, String email, String name, String password, HttpServletRequest request) {
         requirePrivateNetwork(request);
+        limiter.check("admin-bootstrap", request.getRemoteAddr(), normalize(email), 5, 900);
         if (bootstrapToken.isBlank() || !constantEquals(bootstrapToken, token)) throw notFound();
         if (jdbc.queryForObject("SELECT COUNT(*) FROM admin_users", Integer.class) > 0) throw new ApiException(HttpStatus.CONFLICT, "管理员初始化已完成");
         String normalized = normalize(email);
@@ -74,6 +75,7 @@ public class AdminAuthService {
 
     public Map<String, Object> confirmBootstrap(String token, String email, String code, HttpServletRequest request) {
         requirePrivateNetwork(request);
+        limiter.check("admin-bootstrap-confirm", request.getRemoteAddr(), normalize(email), 8, 900);
         if (bootstrapToken.isBlank() || !constantEquals(bootstrapToken, token)) throw notFound();
         String normalized = normalize(email);
         var row = jdbc.query("SELECT id,totp_secret_ciphertext FROM admin_users WHERE email=? AND totp_enabled=0",

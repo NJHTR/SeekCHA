@@ -180,6 +180,9 @@ button, input { font-family: inherit; }
 .admin-provisioner-select select { min-height: 31px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: var(--surface); font: inherit; }
 .admin-provisioner .auth-success { margin: 0 10px 12px; display: grid; gap: 8px; }
 .admin-provisioner .auth-success code { overflow-wrap: anywhere; }
+.admin-setup-secret { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-soft); color: var(--muted); font-size: 9px; }
+.admin-setup-secret code { color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
+.admin-setup-secret a { color: var(--green); font-size: 9px; }
 .admin-table-wrap { overflow-x: auto; }
 .admin-table { width: 100%; border-collapse: collapse; font-size: 10px; }
 .admin-table th { padding: 8px 10px; color: var(--muted); background: var(--surface-soft); font-size: 9px; font-weight: 600; text-align: left; white-space: nowrap; }

@@ -112,6 +112,8 @@ export function App() {
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
   const [adminLoginOpen, setAdminLoginOpen] = useState(false);
   const [adminLoginError, setAdminLoginError] = useState("");
+  const [adminSetupOpen, setAdminSetupOpen] = useState(false);
+  const [adminSetupError, setAdminSetupError] = useState("");
   const [time, setTime] = useState(() => new Date());
   const [records, setRecords] = useState<CheckRecord[]>([]);
   const [recordTotal, setRecordTotal] = useState(0);
@@ -175,6 +177,17 @@ export function App() {
       setAdminLoginOpen(false);
       setPage("admin");
     } catch (error) { setAdminLoginError(error instanceof Error ? error.message : "管理员登录失败"); }
+  };
+
+  const handleAdminBootstrap = async (values: { token: string; email: string; name: string; password: string; code?: string; phase: "create" | "confirm" }) => {
+    setAdminSetupError("");
+    try {
+      if (values.phase === "create") return await dormApi.adminBootstrap(values.token, values.email, values.name, values.password);
+      await dormApi.adminBootstrapConfirm(values.token, values.email, values.code ?? "");
+      setAdminSetupOpen(false);
+      setNotice("管理员初始化完成，请使用管理员登录入口登录");
+      return null;
+    } catch (error) { setAdminSetupError(error instanceof Error ? error.message : "管理员初始化失败"); throw error; }
   };
 
   const signOutAdmin = async () => {
@@ -588,7 +601,10 @@ export function App() {
         {authMode ? <AuthPage mode={authMode} onModeChange={(mode) => { setAuthError(""); setAuthMode(mode); }} onSubmit={handleAuth} onSendCode={sendRegistrationCode} onNotice={setNotice} error={authError} allowDemoReturn={runtimeMode === "demo"} /> : null}
       </Dialog>
       <Dialog open={adminLoginOpen} title="管理员登录" description="使用独立管理员账号与验证器动态口令。" onClose={() => setAdminLoginOpen(false)} className="auth-dialog">
-        <AdminLoginForm error={adminLoginError} onSubmit={handleAdminLogin} />
+        <AdminLoginForm error={adminLoginError} onSubmit={handleAdminLogin} onSetup={() => { setAdminLoginOpen(false); setAdminSetupError(""); setAdminSetupOpen(true); }} />
+      </Dialog>
+      <Dialog open={adminSetupOpen} title="首次初始化管理员" description="仅限配置的局域网或私有网络访问。初始化密钥不会保存到浏览器。" onClose={() => setAdminSetupOpen(false)} className="auth-dialog">
+        <AdminBootstrapForm error={adminSetupError} onSubmit={handleAdminBootstrap} />
       </Dialog>
       <Dialog open={Boolean(selectedRecord)} title="查寝记录详情" description={runtimeMode === "demo" ? "演示记录，不代表服务器上的实际任务结果。" : "服务器任务的执行结果。"} onClose={() => setSelectedRecord(null)} footer={<Button variant="primary" onClick={() => setSelectedRecord(null)}>完成</Button>}>
         {selectedRecord ? <div className="record-detail"><DetailRow label="执行时间" value={selectedRecord.time} /><DetailRow label="结果" value={selectedRecord.status === "success" ? "成功" : "失败"} /><DetailRow label="任务消息" value={selectedRecord.message} /><DetailRow label="执行耗时" value={selectedRecord.duration} /></div> : null}
@@ -1055,7 +1071,7 @@ function TotpSettings({ onNotificationsChanged }: { onNotificationsChanged: () =
 
 type AuthOutcome = { complete: true; user: ApiUser | null } | { complete: false; email: string; totpRequired: boolean };
 
-function AdminLoginForm({ error, onSubmit }: { error: string; onSubmit: (email: string, password: string, code: string) => Promise<void> }) {
+function AdminLoginForm({ error, onSubmit, onSetup }: { error: string; onSubmit: (email: string, password: string, code: string) => Promise<void>; onSetup: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -1070,7 +1086,14 @@ function AdminLoginForm({ error, onSubmit }: { error: string; onSubmit: (email: 
     <TextField label="验证器动态口令" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value)} maxLength={6} required />
     {error ? <Notice title="登录未完成" tone="danger">{error}</Notice> : null}
     <Button type="submit" variant="primary" disabled={busy || !email || password.length < 16 || code.length !== 6}>{busy ? "正在验证…" : "登录管理后台"}</Button>
-  </form><div className="auth-demo-notice"><ShieldCheck />仅允许配置的局域网或私有网络访问。</div></div>;
+  </form><div className="auth-switch">首次使用？<Button variant="quiet" size="small" type="button" onClick={onSetup}>初始化管理员</Button></div><div className="auth-demo-notice"><ShieldCheck />仅允许配置的局域网或私有网络访问。</div></div>;
+}
+
+function AdminBootstrapForm({ error, onSubmit }: { error: string; onSubmit: (values: { token: string; email: string; name: string; password: string; code?: string; phase: "create" | "confirm" }) => Promise<{ created: boolean; admin_id: string; secret: string; otpauth_url: string } | null> }) {
+  const [token, setToken] = useState(""); const [email, setEmail] = useState("njhtr1018@gmail.com"); const [name, setName] = useState("NJHTR"); const [password, setPassword] = useState(""); const [code, setCode] = useState(""); const [secret, setSecret] = useState(""); const [otpauthUrl, setOtpauthUrl] = useState(""); const [busy, setBusy] = useState(false); const [localError, setLocalError] = useState("");
+  const create = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setLocalError(""); try { const result = await onSubmit({ token, email, name, password, phase: "create" }); if (result) { setSecret(result.secret); setOtpauthUrl(result.otpauth_url); } } catch (reason) { setLocalError(reason instanceof Error ? reason.message : "管理员初始化失败"); } finally { setBusy(false); } };
+  const confirm = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setLocalError(""); try { await onSubmit({ token, email, name, password, code, phase: "confirm" }); setSecret(""); setOtpauthUrl(""); setToken(""); setPassword(""); setCode(""); } catch (reason) { setLocalError(reason instanceof Error ? reason.message : "动态口令确认失败"); } finally { setBusy(false); } };
+  return <div className="auth-form-wrap"><div className="auth-form-heading"><span className="section-kicker">PRIVATE ADMIN SETUP</span><h2>{secret ? "绑定验证器" : "创建首位管理员"}</h2><p>{secret ? "将密钥添加到验证器应用，然后输入当前 6 位动态口令。" : "需要服务器上临时配置的一次性初始化密钥。"}</p></div>{secret ? <form className="auth-form" onSubmit={confirm}><div className="admin-setup-secret"><span>验证器密钥</span><code>{secret}</code><a href={otpauthUrl}>打开验证器链接</a></div><TextField label="验证器动态口令" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} maxLength={6} required />{error || localError ? <Notice title="初始化未完成" tone="danger">{localError || error}</Notice> : null}<Button type="submit" variant="primary" disabled={busy || code.length !== 6}>{busy ? "正在确认…" : "确认并启用管理员"}</Button></form> : <form className="auth-form" onSubmit={create}><TextField label="一次性初始化密钥" autoComplete="off" value={token} onChange={(event) => setToken(event.target.value)} required /><TextField label="管理员邮箱" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /><TextField label="名称" value={name} onChange={(event) => setName(event.target.value)} required /><TextField label="独立密码（至少 16 位）" type="password" autoComplete="new-password" minLength={16} value={password} onChange={(event) => setPassword(event.target.value)} required />{error || localError ? <Notice title="初始化未完成" tone="danger">{localError || error}</Notice> : null}<Button type="submit" variant="primary" disabled={busy || !token || password.length < 16}>{busy ? "正在创建…" : "创建管理员并绑定验证器"}</Button></form>}<div className="auth-demo-notice"><ShieldCheck />初始化成功后请从服务器移除一次性密钥。</div></div>;
 }
 
 function AuthPage({ mode, onModeChange, onSubmit, onSendCode, onNotice, error, allowDemoReturn }: { mode: AuthMode; onModeChange: (mode: AuthMode | null) => void; onSubmit: (values: { name: string; email: string; password: string; emailCode: string; totpCode: string; phase: "credentials" | "verification" }) => Promise<AuthOutcome>; onSendCode: (email: string) => Promise<void>; onNotice: (message: string) => void; error: string; allowDemoReturn: boolean }) {

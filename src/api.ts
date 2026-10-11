@@ -243,6 +243,8 @@ export const dormApi = {
     adminCsrfToken = result.csrf_token;
     return result;
   },
+  adminBootstrap: (token: string, email: string, name: string, password: string) => request<{ created: boolean; admin_id: string; secret: string; otpauth_url: string }>("/admin/auth/bootstrap", { method: "POST", body: JSON.stringify({ token, email, name, password }) }),
+  adminBootstrapConfirm: (token: string, email: string, code: string) => request<{ enabled: boolean }>("/admin/auth/bootstrap/confirm", { method: "POST", body: JSON.stringify({ token, email, code }) }),
   async adminLogout() {
     const result = await request<{ ok: boolean }>("/admin/auth/logout", { method: "POST" });
     adminCsrfToken = "";
