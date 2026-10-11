@@ -1,36 +1,42 @@
 # 管理后台部署与访问
 
-管理员接口默认拒绝公网来源。普通用户网站仍可从公网访问；管理员 API 只接受配置的来源 CIDR，并要求已登录用户具备管理员角色和已启用 TOTP。
+管理员账号独立存储，不复用 SeekCHA 普通用户账号、密码或登录会话。后台认证要求独立密码和 TOTP 动态口令；管理员 API、初始化及登录只接受配置的私有网络来源。普通用户站点可继续公开访问。
 
-## 首次启用
+## 私网接入
 
-1. 先确认管理员邮箱已在 SeekCHA 注册。
-2. 编辑服务器 `/etc/dorm-check/dorm-check.env`，追加：
+推荐通过 Tailscale 等私有组网访问。让管理员电脑与服务器加入同一网络，并将服务器私网地址对应的 CIDR 配置到 `DORMCHECK_ADMIN_ALLOWED_CIDRS`。默认值包含 RFC1918 局域网及 Tailscale CGNAT 网段。应用仍应绑定回环地址并由受控反向代理转发；不要放行 `0.0.0.0/0`、`::/0`，不要直接暴露 Java 服务端口。
+
+## 建立首位管理员
+
+1. 在可信电脑生成一次性高熵密钥，例如 `openssl rand -hex 32`。
+2. 将密钥暂时配置为服务器环境变量 `DORMCHECK_ADMIN_BOOTSTRAP_TOKEN`，同时正确配置 `DORMCHECK_ADMIN_ALLOWED_CIDRS`。
+3. 重启服务后，从允许的私网来源调用 `POST /api/admin/auth/bootstrap`，提交 `token`、`email`、`name` 和至少 16 位的独立 `password`。邮箱应为 `njhtr1018@gmail.com`。响应会给出 TOTP 密钥和 `otpauth_url`；立即导入验证器并妥善保管。
+4. 调用 `POST /api/admin/auth/bootstrap/confirm`，提交同一 token、邮箱及验证器当前的 6 位动态口令，完成绑定。此接口只允许一次性初始化记录，成功后无法重复启用。
+5. 从服务器环境移除 `DORMCHECK_ADMIN_BOOTSTRAP_TOKEN` 并重启服务。管理员登录使用站点中的“管理员登录”入口，填入独立密码和 TOTP。
+
+初始化请求示例：
 
 ```sh
-DORMCHECK_ADMIN_BOOTSTRAP=your-email@example.com:owner
-DORMCHECK_ADMIN_ALLOWED_CIDRS=127.0.0.1/32,::1/128,100.64.0.0/10
+curl -X POST http://127.0.0.1:8001/api/admin/auth/bootstrap \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<一次性密钥>","email":"njhtr1018@gmail.com","name":"NJHTR","password":"<至少16位独立密码>"}'
 ```
 
-`DORMCHECK_ADMIN_BOOTSTRAP` 支持逗号分隔多项，角色只能是 `owner`、`operator`、`analyst`。服务启动时只为现有用户创建初始角色；未知邮箱会被忽略。先配置一个 owner，之后可由 owner 在管理后台给其他用户分配角色。
+该接口在已有任何管理员账号时拒绝创建；不存在管理员公开注册或普通用户提升权限的入口。不要把初始化密钥、密码、TOTP 密钥或 `otpauth_url` 放进代码仓库、工单或聊天记录。初始化响应中的 TOTP 密钥只显示一次。
 
-3. 让个人电脑和服务器加入同一个 Tailscale 网络，确认服务器有 `100.x` 地址，然后重启 `dorm-check` 服务。也可以将可信的固定公网出口 IP/CIDR 加入 `DORMCHECK_ADMIN_ALLOWED_CIDRS`；不要放行 `0.0.0.0/0` 或 `::/0`。
-4. 用该邮箱登录 SeekCHA，在“账号设置 / 安全验证”启用验证器 TOTP，重新登录后打开“管理后台”。后台仍使用现有站点地址，不需要新域名。
-
-如果管理后台暂时尚未启用，服务端环境变量为空时不会授予任何管理员角色。只配置 `DORMCHECK_ADMIN_ALLOWED_CIDRS` 不会创建管理员。
-
-## 角色范围
+## 角色与范围
 
 - `analyst`：只读汇总统计，不返回用户级数据。
 - `operator`：查看脱敏用户配置、当前队列、查寝执行记录和课表/公告访问事件。
-- `owner`：包含运维只读权限，并可分配/撤销管理员角色、查看管理员审计记录。
+- `owner`：包含运维只读权限并查看管理员访问审计。
 
-所有角色都只能查看。当前不提供管理员代用户重试查寝、查看或修改校园凭据、删除用户等能力。所有者角色变更要求填写原因，并阻止移除或降级最后一个 owner。
+首版不提供管理员网页端增删账号、修改角色、代用户操作、查看或修改校园凭据等能力。额外管理员需经受控运维流程创建，不能用普通 SeekCHA 账号转换。
 
 ## 数据保护
 
-- 邮箱在管理员列表中脱敏；校园统一身份认证只暴露配置/验证状态，不返回账号提示或加密凭据。
+- 邮箱在后台列表中脱敏；校园认证仅暴露配置/验证状态，不返回凭据或账号提示。
 - 查寝错误信息限制长度并清洗邮箱、password、cookie、token 等字段。
-- 课表和公告事件记录用户、功能、成功/失败和时间，不记录缓存正文或校园平台响应内容；明细保留 90 天。
-- 管理接口访问和角色变更写入审计记录。审计表不提供网页删除接口。
-- IP 校验使用 Nginx 覆盖写入的 `X-Forwarded-For`，应用只绑定回环地址；不要将 Java 服务端口暴露到公网或让其他代理透传用户可控的转发头。
+- 课表和公告事件不记录缓存正文或校园平台响应内容；明细保留 90 天。
+- 管理员会话使用独立 HttpOnly、SameSite=Strict Cookie、CSRF token，8 小时过期；管理员登录有速率限制和失败退避。
+- 管理接口访问写入审计记录；审计表没有网页删除接口。
+- IP 校验依赖受控反向代理覆盖写入的来源地址；不要透传用户可控的转发头。

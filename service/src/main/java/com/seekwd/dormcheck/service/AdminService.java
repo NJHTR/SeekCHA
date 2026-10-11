@@ -14,37 +14,21 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 
 @Service
 public class AdminService {
     private final JdbcTemplate jdbc;
-    private final SessionService sessions;
+    private final AdminAuthService adminAuth;
     private final SecuritySupport security;
     private final List<Network> allowedNetworks;
-    private final String bootstrapAdmins;
 
-    public AdminService(JdbcTemplate jdbc, SessionService sessions, SecuritySupport security,
-        @Value("${dormcheck.admin-allowed-cidrs:127.0.0.1/32,::1/128,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,100.64.0.0/10}") String allowedCidrs,
-        @Value("${dormcheck.admin-bootstrap:}") String bootstrapAdmins) {
+    public AdminService(JdbcTemplate jdbc, AdminAuthService adminAuth, SecuritySupport security,
+        @Value("${dormcheck.admin-allowed-cidrs:127.0.0.1/32,::1/128,192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,100.64.0.0/10}") String allowedCidrs) {
         this.jdbc = jdbc;
-        this.sessions = sessions;
+        this.adminAuth = adminAuth;
         this.security = security;
         this.allowedNetworks = Arrays.stream(allowedCidrs.split(",")).map(String::trim).filter(value -> !value.isEmpty())
             .map(Network::parse).toList();
-        this.bootstrapAdmins = bootstrapAdmins;
-    }
-
-    @EventListener(ApplicationReadyEvent.class)
-    public void bootstrapConfiguredAdmins() {
-        for (String entry : bootstrapAdmins.split(",")) {
-            String[] parts = entry.trim().split(":", 2);
-            if (parts.length != 2 || parts[0].isBlank() || !List.of("owner", "operator", "analyst").contains(parts[1].trim())) continue;
-            jdbc.update("INSERT OR IGNORE INTO admin_accounts(user_id,role,created_at,created_by) " +
-                "SELECT id,?,?,NULL FROM users WHERE lower(email)=lower(?)", parts[1].trim(), security.now(), parts[0].trim());
-        }
-        jdbc.update("DELETE FROM feature_usage_events WHERE created_at < ?", java.time.Instant.now().minusSeconds(90L * 86_400).toString());
     }
 
     public Map<String, Object> me(HttpServletRequest request) {
@@ -78,11 +62,11 @@ public class AdminService {
         int safePage = Math.max(1, Math.min(page, 100_000));
         String term = query == null ? "" : query.trim().toLowerCase(java.util.Locale.ROOT);
         int size = 25;
-        List<Map<String, Object>> rows = jdbc.query("SELECT u.id,u.email,u.display_name,u.created_at,a.role admin_role, " +
+        List<Map<String, Object>> rows = jdbc.query("SELECT u.id,u.email,u.display_name,u.created_at, " +
             "c.user_id IS NOT NULL configured,c.verified_at,s.enabled schedule_enabled, " +
             "(SELECT r.status FROM runs r WHERE r.user_id=u.id ORDER BY r.started_at DESC LIMIT 1) last_status, " +
             "(SELECT r.started_at FROM runs r WHERE r.user_id=u.id ORDER BY r.started_at DESC LIMIT 1) last_run " +
-            "FROM users u LEFT JOIN credentials c ON c.user_id=u.id LEFT JOIN schedules s ON s.user_id=u.id LEFT JOIN admin_accounts a ON a.user_id=u.id " +
+            "FROM users u LEFT JOIN credentials c ON c.user_id=u.id LEFT JOIN schedules s ON s.user_id=u.id " +
             "WHERE (?='' OR lower(u.email) LIKE ? OR lower(u.display_name) LIKE ?) " +
             "ORDER BY u.created_at DESC LIMIT ? OFFSET ?", (rs, row) -> {
                 Map<String, Object> item = new LinkedHashMap<>();
@@ -90,7 +74,7 @@ public class AdminService {
                 item.put("name", rs.getString("display_name")); item.put("registered_at", rs.getString("created_at"));
                 item.put("credential_configured", rs.getBoolean("configured")); item.put("credential_verified", rs.getString("verified_at") != null);
                 item.put("schedule_enabled", rs.getBoolean("schedule_enabled")); item.put("last_run_status", rs.getString("last_status"));
-                item.put("last_run_at", rs.getString("last_run")); item.put("admin_role", rs.getString("admin_role"));
+                item.put("last_run_at", rs.getString("last_run"));
                 return item;
             }, term, "%" + term + "%", "%" + term + "%", size, (safePage - 1) * size);
         long total = jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE (?='' OR lower(email) LIKE ? OR lower(display_name) LIKE ?)",
@@ -132,7 +116,7 @@ public class AdminService {
         Map<String, Object> admin = requireAdmin(request, "admin.audit");
         if (!"owner".equals(admin.get("role"))) throw new ApiException(HttpStatus.FORBIDDEN, "owner role required");
         List<Map<String, Object>> rows = jdbc.query("SELECT a.action,a.remote_address,a.created_at,u.display_name FROM admin_audit_logs a " +
-            "LEFT JOIN users u ON u.id=a.admin_user_id ORDER BY a.created_at DESC LIMIT 100", (rs, row) -> Map.of(
+            "LEFT JOIN admin_users u ON u.id=a.admin_user_id ORDER BY a.created_at DESC LIMIT 100", (rs, row) -> Map.of(
                 "action", safeMessage(rs.getString("action")), "remote_address", rs.getString("remote_address"),
                 "time", rs.getString("created_at"), "admin", valueOrEmpty(rs.getString("display_name"))));
         return Map.of("items", rows);
@@ -152,39 +136,6 @@ public class AdminService {
         return Map.of("items", rows, "page", safePage, "page_size", size, "total", total);
     }
 
-    public Map<String, Object> updateRole(HttpServletRequest request, String targetUserId, String role, String reason) {
-        Map<String, Object> current = requireAdmin(request, "admin.roles");
-        if (!"owner".equals(current.get("role"))) throw new ApiException(HttpStatus.FORBIDDEN, "owner role required");
-        if (reason == null || reason.trim().length() < 4 || reason.trim().length() > 240) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "an audit reason between 4 and 240 characters is required");
-        }
-        if (!List.of("none", "owner", "operator", "analyst").contains(role)) throw new ApiException(HttpStatus.BAD_REQUEST, "invalid role");
-        String currentUserId = (String) current.get("user_id");
-        if (targetUserId.equals(currentUserId) && "none".equals(role)) throw new ApiException(HttpStatus.CONFLICT, "cannot remove your own owner access");
-        if (jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE id=?", Integer.class, targetUserId) == 0) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "user not found");
-        }
-        if ("none".equals(role)) {
-            String existing = jdbc.query("SELECT role FROM admin_accounts WHERE user_id=?", rs -> rs.next() ? rs.getString(1) : null, targetUserId);
-            if ("owner".equals(existing) && jdbc.queryForObject("SELECT COUNT(*) FROM admin_accounts WHERE role='owner'", Integer.class) <= 1) {
-                throw new ApiException(HttpStatus.CONFLICT, "cannot remove the last owner");
-            }
-            jdbc.update("INSERT INTO admin_accounts(user_id,role,created_at,created_by) VALUES(?,'none',?,?) " +
-                "ON CONFLICT(user_id) DO UPDATE SET role='none'", targetUserId, security.now(), currentUserId);
-        } else {
-            String existing = jdbc.query("SELECT role FROM admin_accounts WHERE user_id=?", rs -> rs.next() ? rs.getString(1) : null, targetUserId);
-            if ("owner".equals(existing) && !"owner".equals(role)
-                && jdbc.queryForObject("SELECT COUNT(*) FROM admin_accounts WHERE role='owner'", Integer.class) <= 1) {
-                throw new ApiException(HttpStatus.CONFLICT, "cannot demote the last owner");
-            }
-            jdbc.update("INSERT INTO admin_accounts(user_id,role,created_at,created_by) VALUES(?,?,?,?) " +
-                "ON CONFLICT(user_id) DO UPDATE SET role=excluded.role", targetUserId, role, security.now(), currentUserId);
-        }
-        jdbc.update("INSERT INTO admin_audit_logs(id,admin_user_id,action,remote_address,created_at) VALUES(?,?,?,?,?)",
-            UUID.randomUUID().toString(), currentUserId, "admin.role:" + role + ":" + targetUserId + ":" + reason.trim(), request.getRemoteAddr(), security.now());
-        return Map.of("updated", true, "role", role);
-    }
-
     public void recordFeatureUse(String userId, String feature, boolean success) {
         jdbc.update("INSERT INTO feature_usage_events(id,user_id,feature,result,created_at) VALUES(?,?,?,?,?)",
             UUID.randomUUID().toString(), userId, feature, success ? "success" : "failure", security.now());
@@ -194,15 +145,9 @@ public class AdminService {
         if (allowedNetworks.stream().noneMatch(network -> network.contains(request.getRemoteAddr()))) {
             throw new ApiException(HttpStatus.NOT_FOUND, "not found");
         }
-        Map<String, Object> session = sessions.require(request);
-        String userId = (String) session.get("user_id");
-        bootstrapConfiguredAdmins();
-        List<Map<String, Object>> rows = jdbc.query("SELECT role FROM admin_accounts WHERE user_id=?", (rs, row) -> Map.of("role", rs.getString("role")), userId);
-        if (rows.isEmpty()) throw new ApiException(HttpStatus.FORBIDDEN, "administrator access required");
-        if ("none".equals(rows.get(0).get("role"))) throw new ApiException(HttpStatus.FORBIDDEN, "administrator access required");
-        Boolean totpEnabled = jdbc.queryForObject("SELECT EXISTS(SELECT 1 FROM user_totp WHERE user_id=? AND enabled=1)", Boolean.class, userId);
-        if (!Boolean.TRUE.equals(totpEnabled)) throw new ApiException(HttpStatus.FORBIDDEN, "administrator TOTP must be enabled");
-        String role = (String) rows.get(0).get("role");
+        Map<String, Object> session = adminAuth.require(request);
+        String userId = (String) session.get("admin_id");
+        String role = (String) session.get("role");
         if ("analyst".equals(role) && !List.of("admin.me", "admin.overview").contains(action)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "insufficient role");
         }

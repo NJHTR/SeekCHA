@@ -3,6 +3,7 @@ import com.seekwd.dormcheck.service.DormCheckService;
 import com.seekwd.dormcheck.service.impl.AuthSecurityService;
 import com.seekwd.dormcheck.service.SessionService;
 import com.seekwd.dormcheck.service.AdminService;
+import com.seekwd.dormcheck.service.AdminAuthService;
 import com.seekwd.dormcheck.api.dto.AuthRequest;
 import com.seekwd.dormcheck.api.dto.CredentialRequest;
 import com.seekwd.dormcheck.api.dto.EmailCodeRequest;
@@ -31,12 +32,14 @@ public class DormCheckController {
     private final SessionService sessions;
     private final AuthSecurityService authSecurity;
     private final AdminService admin;
+    private final AdminAuthService adminAuth;
 
-    public DormCheckController(DormCheckService service, SessionService sessions, AuthSecurityService authSecurity, AdminService admin) {
+    public DormCheckController(DormCheckService service, SessionService sessions, AuthSecurityService authSecurity, AdminService admin, AdminAuthService adminAuth) {
         this.service = service;
         this.sessions = sessions;
         this.authSecurity = authSecurity;
         this.admin = admin;
+        this.adminAuth = adminAuth;
     }
 
     @GetMapping("/health")
@@ -46,6 +49,46 @@ public class DormCheckController {
 
     @GetMapping("/admin/me")
     Map<String, Object> adminMe(HttpServletRequest request) { return admin.me(request); }
+
+    @GetMapping("/admin/auth/session")
+    Map<String, Object> adminSession(HttpServletRequest request) { return adminAuth.session(request); }
+
+    @PostMapping("/admin/auth/bootstrap")
+    Map<String, Object> adminBootstrap(@Valid @RequestBody AdminBootstrapRequest payload, HttpServletRequest request) {
+        return adminAuth.bootstrap(payload.token(), payload.email(), payload.name(), payload.password(), request);
+    }
+
+    @PostMapping("/admin/auth/bootstrap/confirm")
+    Map<String, Object> confirmAdminBootstrap(@Valid @RequestBody AdminBootstrapConfirmRequest payload, HttpServletRequest request) {
+        return adminAuth.confirmBootstrap(payload.token(), payload.email(), payload.code(), request);
+    }
+
+    @PostMapping("/admin/auth/login")
+    Map<String, Object> adminLogin(@Valid @RequestBody AdminLoginRequest payload, HttpServletRequest request, HttpServletResponse response) {
+        return adminAuth.login(payload.email(), payload.password(), payload.code(), request, response);
+    }
+
+    @PostMapping("/admin/auth/logout")
+    Map<String, Boolean> adminLogout(HttpServletRequest request, HttpServletResponse response) {
+        Map<String, Object> session = adminAuth.require(request);
+        adminAuth.requireCsrf(request, session);
+        adminAuth.logout(request, response);
+        return Map.of("ok", true);
+    }
+
+    @PostMapping("/admin/accounts")
+    Map<String, Object> createAdminAccount(@Valid @RequestBody AdminAccountRequest payload, HttpServletRequest request) {
+        Map<String, Object> session = adminAuth.require(request);
+        adminAuth.requireCsrf(request, session);
+        return adminAuth.createAccount(session, payload.email(), payload.name(), payload.password(), payload.role(), request);
+    }
+
+    @PostMapping("/admin/accounts/totp/confirm")
+    Map<String, Object> confirmAdminAccount(@Valid @RequestBody AdminAccountTotpRequest payload, HttpServletRequest request) {
+        Map<String, Object> session = adminAuth.require(request);
+        adminAuth.requireCsrf(request, session);
+        return adminAuth.confirmAccount(session, payload.email(), payload.code(), request);
+    }
 
     @GetMapping("/admin/overview")
     Map<String, Object> adminOverview(HttpServletRequest request) { return admin.overview(request); }
@@ -67,13 +110,6 @@ public class DormCheckController {
     @GetMapping("/admin/features")
     Map<String, Object> adminFeatures(@RequestParam(defaultValue = "1") int page,
         @RequestParam(defaultValue = "all") String feature, HttpServletRequest request) { return admin.featureUsage(request, page, feature); }
-
-    @PutMapping("/admin/roles")
-    Map<String, Object> updateAdminRole(@Valid @RequestBody AdminRoleRequest payload, HttpServletRequest request) {
-        Map<String, Object> session = sessions.require(request);
-        sessions.requireCsrf(request, session);
-        return admin.updateRole(request, payload.userId(), payload.role(), payload.reason());
-    }
 
     @PostMapping("/auth/register")
     Map<String, Object> register(@Valid @RequestBody AuthRequest payload,
@@ -213,6 +249,17 @@ public class DormCheckController {
     }
 
     public record TotpRequest(@jakarta.validation.constraints.Pattern(regexp="\\d{6}") String code) {}
-    public record AdminRoleRequest(@jakarta.validation.constraints.NotBlank String userId,
-        @jakarta.validation.constraints.NotBlank String role, @jakarta.validation.constraints.NotBlank String reason) {}
+    public record AdminBootstrapRequest(@jakarta.validation.constraints.NotBlank String token,
+        @jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank String email,
+        String name, @jakarta.validation.constraints.Size(min=16, max=256) String password) {}
+    public record AdminBootstrapConfirmRequest(@jakarta.validation.constraints.NotBlank String token,
+        @jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank String email,
+        @jakarta.validation.constraints.Pattern(regexp="\\d{6}") String code) {}
+    public record AdminLoginRequest(@jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank String email,
+        @jakarta.validation.constraints.NotBlank String password, @jakarta.validation.constraints.Pattern(regexp="\\d{6}") String code) {}
+    public record AdminAccountRequest(@jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank String email,
+        String name, @jakarta.validation.constraints.Size(min=16, max=256) String password,
+        @jakarta.validation.constraints.Pattern(regexp="owner|operator|analyst") String role) {}
+    public record AdminAccountTotpRequest(@jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank String email,
+        @jakarta.validation.constraints.Pattern(regexp="\\d{6}") String code) {}
 }

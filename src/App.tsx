@@ -110,6 +110,8 @@ export function App() {
   const [page, setPage] = useState<Page>("overview");
   const [accountSection, setAccountSection] = useState<"campus" | "security" | "devices">("campus");
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
+  const [adminLoginOpen, setAdminLoginOpen] = useState(false);
+  const [adminLoginError, setAdminLoginError] = useState("");
   const [time, setTime] = useState(() => new Date());
   const [records, setRecords] = useState<CheckRecord[]>([]);
   const [recordTotal, setRecordTotal] = useState(0);
@@ -126,11 +128,13 @@ export function App() {
   const [academicNoticesLoading, setAcademicNoticesLoading] = useState(false);
   const [academicNoticesError, setAcademicNoticesError] = useState("");
   const [academicNoticesRevision, setAcademicNoticesRevision] = useState(0);
+  const [academicNoticesLoadedRevision, setAcademicNoticesLoadedRevision] = useState(0);
   const [academicSchedule, setAcademicSchedule] = useState<ApiAcademicScheduleItem[]>([]);
   const [academicScheduleMeta, setAcademicScheduleMeta] = useState<ApiAcademicDataMeta | null>(null);
   const [academicScheduleLoading, setAcademicScheduleLoading] = useState(false);
   const [academicScheduleError, setAcademicScheduleError] = useState("");
   const [academicScheduleRevision, setAcademicScheduleRevision] = useState(0);
+  const [academicScheduleLoadedRevision, setAcademicScheduleLoadedRevision] = useState(0);
   const [scheduled, setScheduled] = useState(false);
   const [scheduledTime, setScheduledTime] = useState("21:40");
   const [scheduleDays, setScheduleDays] = useState([1, 2, 3, 4, 5, 6, 7]);
@@ -157,11 +161,26 @@ export function App() {
   const [authError, setAuthError] = useState("");
 
   useEffect(() => {
-    if (!user || runtimeMode !== "connected") { setAdminRole(null); return; }
+    if (runtimeMode !== "connected") { setAdminRole(null); return; }
     let active = true;
-    dormApi.adminMe().then((result) => { if (active) setAdminRole(result.role); }).catch(() => { if (active) setAdminRole(null); });
+    dormApi.adminSession().then((result) => { if (active) setAdminRole(result.admin?.role ?? null); }).catch(() => { if (active) setAdminRole(null); });
     return () => { active = false; };
-  }, [user?.id, runtimeMode]);
+  }, [runtimeMode]);
+
+  const handleAdminLogin = async (email: string, password: string, code: string) => {
+    setAdminLoginError("");
+    try {
+      const result = await dormApi.adminLogin(email, password, code);
+      setAdminRole(result.admin.role);
+      setAdminLoginOpen(false);
+      setPage("admin");
+    } catch (error) { setAdminLoginError(error instanceof Error ? error.message : "管理员登录失败"); }
+  };
+
+  const signOutAdmin = async () => {
+    try { await dormApi.adminLogout(); setAdminRole(null); if (page === "admin") setPage("overview"); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "管理员退出失败"); }
+  };
 
   useEffect(() => {
     window.localStorage.setItem(INTERFACE_SETTINGS_KEY, JSON.stringify(interfaceSettings));
@@ -294,12 +313,13 @@ export function App() {
     let active = true;
     setAcademicNoticesLoading(true);
     setAcademicNoticesError("");
-    dormApi.academicNotices(academicNoticesRevision > 0).then((data) => {
+    const forceRefresh = academicNoticesRevision > academicNoticesLoadedRevision;
+    dormApi.academicNotices(forceRefresh).then((data) => {
       if (active) { setAcademicNotices(data.items); setAcademicNoticesMeta(data); }
     }).catch((error) => {
       if (active) setAcademicNoticesError(error instanceof Error ? error.message : "无法读取教务公告");
     }).finally(() => {
-      if (active) setAcademicNoticesLoading(false);
+      if (active) { setAcademicNoticesLoading(false); setAcademicNoticesLoadedRevision(academicNoticesRevision); }
     });
     return () => { active = false; };
   }, [page, user?.id, runtimeMode, academicNoticesRevision]);
@@ -309,15 +329,38 @@ export function App() {
     let active = true;
     setAcademicScheduleLoading(true);
     setAcademicScheduleError("");
-    dormApi.academicSchedule(academicScheduleRevision > 0).then((data) => {
+    const forceRefresh = academicScheduleRevision > academicScheduleLoadedRevision;
+    dormApi.academicSchedule(forceRefresh).then((data) => {
       if (active) { setAcademicSchedule(data.items); setAcademicScheduleMeta(data); }
     }).catch((error) => {
       if (active) setAcademicScheduleError(error instanceof Error ? error.message : "无法读取我的课表");
     }).finally(() => {
-      if (active) setAcademicScheduleLoading(false);
+      if (active) { setAcademicScheduleLoading(false); setAcademicScheduleLoadedRevision(academicScheduleRevision); }
     });
     return () => { active = false; };
   }, [page, user?.id, runtimeMode, academicScheduleRevision]);
+
+  useEffect(() => {
+    if ((page !== "notices" && page !== "timetable") || !user || runtimeMode !== "connected") return;
+    let active = true;
+    let timer = 0;
+    const refreshFromCache = () => {
+      if (document.visibilityState === "visible") {
+        if (page === "notices") {
+          dormApi.academicNotices().then((data) => {
+            if (active) { setAcademicNotices(data.items); setAcademicNoticesMeta(data); }
+          }).catch(() => {});
+        } else {
+          dormApi.academicSchedule().then((data) => {
+            if (active) { setAcademicSchedule(data.items); setAcademicScheduleMeta(data); }
+          }).catch(() => {});
+        }
+      }
+      if (active) timer = window.setTimeout(refreshFromCache, 5 * 60_000);
+    };
+    timer = window.setTimeout(refreshFromCache, 5 * 60_000);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [page, user?.id, runtimeMode]);
 
   useEffect(() => {
     if (!checkRequested) return;
@@ -496,6 +539,7 @@ export function App() {
           <Tooltip content={theme === "dark" ? "切换浅色外观" : "切换深色外观"}><IconButton label={theme === "dark" ? "切换浅色外观" : "切换深色外观"} onClick={() => setInterfaceSettings((current) => ({ ...current, theme: current.theme === "dark" ? "light" : "dark" }))}>{theme === "dark" ? <Sun /> : <Moon />}</IconButton></Tooltip>
           <NotificationCenter authenticated={Boolean(user)} items={notificationItems} unreadCount={notificationUnread} loading={notificationsLoading} onRefresh={refreshNotifications} onMarkAllRead={markAllNotificationsRead} onOpenNotification={openNotification} onSignIn={() => setAuthMode("login")} onViewAll={() => navigate("history")} />
           <ToolbarDivider />
+          {adminRole ? <Menu label="管理员操作" icon={<ShieldCheck />} iconOnly items={[{ label: "退出管理后台", icon: <LogOut />, onSelect: () => void signOutAdmin() }]} /> : <Button size="small" variant="quiet" leadingIcon={<ShieldCheck />} onClick={() => { setAdminLoginError(""); setAdminLoginOpen(true); }}>管理员登录</Button>}
           {user ? <Menu label="账户操作" icon={<UserRound />} iconOnly items={[{ label: "退出登录", icon: <LogOut />, onSelect: () => void signOut() }]} /> : <Button size="small" variant="primary" onClick={() => setAuthMode("login")}>登录 / 注册</Button>}
         </Toolbar>}
         sidebar={<div className="account-sidebar-layout"><div className="dorm-sidebar">
@@ -542,6 +586,9 @@ export function App() {
       {notice ? <Notification title="查寝中心" icon={<CheckCheck />} duration={3200} onDismiss={() => setNotice("")}>{notice}</Notification> : null}
       <Dialog open={Boolean(authMode)} title={authMode === "register" ? "创建账户" : "登录查寝中心"} onClose={() => { setAuthError(""); setAuthMode(null); }} className="auth-dialog">
         {authMode ? <AuthPage mode={authMode} onModeChange={(mode) => { setAuthError(""); setAuthMode(mode); }} onSubmit={handleAuth} onSendCode={sendRegistrationCode} onNotice={setNotice} error={authError} allowDemoReturn={runtimeMode === "demo"} /> : null}
+      </Dialog>
+      <Dialog open={adminLoginOpen} title="管理员登录" description="使用独立管理员账号与验证器动态口令。" onClose={() => setAdminLoginOpen(false)} className="auth-dialog">
+        <AdminLoginForm error={adminLoginError} onSubmit={handleAdminLogin} />
       </Dialog>
       <Dialog open={Boolean(selectedRecord)} title="查寝记录详情" description={runtimeMode === "demo" ? "演示记录，不代表服务器上的实际任务结果。" : "服务器任务的执行结果。"} onClose={() => setSelectedRecord(null)} footer={<Button variant="primary" onClick={() => setSelectedRecord(null)}>完成</Button>}>
         {selectedRecord ? <div className="record-detail"><DetailRow label="执行时间" value={selectedRecord.time} /><DetailRow label="结果" value={selectedRecord.status === "success" ? "成功" : "失败"} /><DetailRow label="任务消息" value={selectedRecord.message} /><DetailRow label="执行耗时" value={selectedRecord.duration} /></div> : null}
@@ -604,7 +651,6 @@ function AdminPage({ role }: { role: "owner" | "operator" | "analyst" }) {
   const [audit, setAudit] = useState<ApiAdminAudit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [roleBusy, setRoleBusy] = useState("");
   const refresh = async () => {
     setLoading(true); setError("");
     try {
@@ -619,14 +665,6 @@ function AdminPage({ role }: { role: "owner" | "operator" | "analyst" }) {
     } catch (reason) { setError(reason instanceof Error ? reason.message : "无法读取管理员数据"); }
     finally { setLoading(false); }
   };
-  const changeRole = async (user: ApiAdminUser, role: "none" | "owner" | "operator" | "analyst") => {
-    const reason = window.prompt(`设置 ${user.name} 的管理员角色。请填写操作原因：`);
-    if (!reason?.trim()) return;
-    setRoleBusy(user.id);
-    try { await dormApi.adminSetRole(user.id, role, reason.trim()); await refresh(); }
-    catch (reasonError) { setError(reasonError instanceof Error ? reasonError.message : "角色更新失败"); }
-    finally { setRoleBusy(""); }
-  };
   useEffect(() => { void refresh(); }, [role, userPage, userQuery]);
   if (loading && !overview) return <div className="page-content admin-page"><div className="admin-loading">正在读取运营数据…</div></div>;
   if (error && !overview) return <div className="page-content admin-page"><Notice title="管理数据暂不可用" tone="warning">{error}</Notice></div>;
@@ -635,6 +673,7 @@ function AdminPage({ role }: { role: "owner" | "operator" | "analyst" }) {
   return <div className="page-content admin-page">
     <div className="page-heading"><div><div className="eyebrow">ADMINISTRATION</div><h1>管理后台</h1><p>只读运营视图 · 当前角色：{role === "owner" ? "所有者" : role === "operator" ? "运维管理员" : "分析员"}</p></div><Button size="small" leadingIcon={<RefreshCw />} onClick={() => void refresh()}>刷新数据</Button></div>
     {error ? <Notice title="部分数据读取失败" tone="warning">{error}</Notice> : null}
+    {role === "owner" ? <AdminAccountProvisioner /> : null}
     <div className="stats-grid admin-stats">
       <StatCard label="注册用户" value={String(stats?.total ?? 0)} detail={`已配置认证 ${stats?.configured ?? 0} 人`} icon={<UserRound />} tone="green" />
       <StatCard label="已验证认证" value={String(stats?.verified ?? 0)} detail={`已启用定时 ${stats?.scheduled ?? 0} 人`} icon={<ShieldCheck />} tone="teal" />
@@ -642,7 +681,7 @@ function AdminPage({ role }: { role: "owner" | "operator" | "analyst" }) {
       <StatCard label="当前队列" value={String((overview?.queue.queued ?? 0) + (overview?.queue.running ?? 0) + (overview?.queue.retry_wait ?? 0))} detail={`等待 ${overview?.queue.queued ?? 0} · 执行 ${overview?.queue.running ?? 0}`} icon={<Activity />} tone="amber" />
     </div>
     {role !== "analyst" ? <><div className="admin-grid">
-      <section className="surface-card admin-panel"><div className="section-heading"><div><span className="section-kicker">账户状态</span><h2>用户配置与权限</h2></div><form className="admin-search" onSubmit={(event) => { event.preventDefault(); setUserPage(1); setUserQuery(userSearchInput.trim()); }}><input aria-label="搜索用户邮箱或名称" placeholder="搜索邮箱或名称" value={userSearchInput} onChange={(event) => setUserSearchInput(event.target.value)} /><Button size="small" type="submit">搜索</Button></form></div><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>用户</th><th>校园认证</th><th>定时查寝</th><th>最近结果</th>{role === "owner" ? <th>后台角色</th> : null}</tr></thead><tbody>{users.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.email}</small></td><td><StatusBadge tone={item.credential_verified ? "success" : item.credential_configured ? "warning" : "neutral"} dot>{item.credential_verified ? "已验证" : item.credential_configured ? "已配置" : "未配置"}</StatusBadge></td><td>{item.schedule_enabled ? "已启用" : "已暂停"}</td><td>{item.last_run_status === "success" ? "成功" : item.last_run_status === "failure" ? "失败" : "暂无"}</td>{role === "owner" ? <td><select className="admin-role-select" aria-label={`设置 ${item.name} 的后台角色`} value={item.admin_role ?? "none"} disabled={roleBusy === item.id} onChange={(event) => void changeRole(item, event.target.value as "none" | "owner" | "operator" | "analyst")}><option value="none">无权限</option><option value="analyst">分析员</option><option value="operator">运维管理员</option><option value="owner">所有者</option></select></td> : null}</tr>)}</tbody></table></div><footer className="admin-pagination"><span>共 {userTotal} 位用户</span><Button size="small" variant="quiet" disabled={userPage <= 1} onClick={() => setUserPage((pageNumber) => pageNumber - 1)}>上一页</Button><span>{userPage} / {Math.max(1, Math.ceil(userTotal / 25))}</span><Button size="small" variant="quiet" disabled={userPage >= Math.ceil(userTotal / 25)} onClick={() => setUserPage((pageNumber) => pageNumber + 1)}>下一页</Button></footer></section>
+      <section className="surface-card admin-panel"><div className="section-heading"><div><span className="section-kicker">账户状态</span><h2>用户配置</h2></div><form className="admin-search" onSubmit={(event) => { event.preventDefault(); setUserPage(1); setUserQuery(userSearchInput.trim()); }}><input aria-label="搜索用户邮箱或名称" placeholder="搜索邮箱或名称" value={userSearchInput} onChange={(event) => setUserSearchInput(event.target.value)} /><Button size="small" type="submit">搜索</Button></form></div><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>用户</th><th>校园认证</th><th>定时查寝</th><th>最近结果</th></tr></thead><tbody>{users.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.email}</small></td><td><StatusBadge tone={item.credential_verified ? "success" : item.credential_configured ? "warning" : "neutral"} dot>{item.credential_verified ? "已验证" : item.credential_configured ? "已配置" : "未配置"}</StatusBadge></td><td>{item.schedule_enabled ? "已启用" : "已暂停"}</td><td>{item.last_run_status === "success" ? "成功" : item.last_run_status === "failure" ? "失败" : "暂无"}</td></tr>)}</tbody></table></div><footer className="admin-pagination"><span>共 {userTotal} 位用户</span><Button size="small" variant="quiet" disabled={userPage <= 1} onClick={() => setUserPage((pageNumber) => pageNumber - 1)}>上一页</Button><span>{userPage} / {Math.max(1, Math.ceil(userTotal / 25))}</span><Button size="small" variant="quiet" disabled={userPage >= Math.ceil(userTotal / 25)} onClick={() => setUserPage((pageNumber) => pageNumber + 1)}>下一页</Button></footer></section>
       <section className="surface-card admin-panel"><div className="section-heading"><div><span className="section-kicker">任务调度</span><h2>当前队列</h2></div></div>{queue.length ? <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>用户</th><th>来源</th><th>状态</th><th>尝试</th></tr></thead><tbody>{queue.slice(0, 12).map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.email}</small></td><td>{item.trigger === "scheduled" ? "定时" : "手动"}</td><td><StatusBadge tone={item.status === "running" ? "success" : "warning"} dot>{item.status === "running" ? "执行中" : item.status === "retry_wait" ? "等待重试" : "排队中"}</StatusBadge></td><td>{item.attempts} / {item.max_attempts}</td></tr>)}</tbody></table></div> : <div className="admin-empty">当前没有等待中的任务</div>}</section>
     </div>
     <div className="admin-grid">
@@ -650,6 +689,13 @@ function AdminPage({ role }: { role: "owner" | "operator" | "analyst" }) {
       <section className="surface-card admin-panel"><div className="section-heading"><div><span className="section-kicker">功能使用</span><h2>课表与公告</h2></div></div><div className="admin-usage-summary"><div><strong>{overview?.feature_use_today.timetable ?? 0}</strong><span>今日课表访问</span></div><div><strong>{overview?.feature_use_today.notices ?? 0}</strong><span>今日公告访问</span></div></div><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>用户</th><th>功能</th><th>结果</th><th>时间</th></tr></thead><tbody>{features.slice(0, 8).map((item, index) => <tr key={`${item.time}-${item.email}-${index}`}><td><strong>{item.name}</strong><small>{item.email}</small></td><td>{item.feature === "schedule" ? "课表" : "公告"}</td><td>{item.result === "success" ? "成功" : "失败"}</td><td>{formatNotificationTime(item.time)}</td></tr>)}</tbody></table></div></section>
     </div>{role === "owner" ? <section className="surface-card admin-panel"><div className="section-heading"><div><span className="section-kicker">安全审计</span><h2>管理员访问与操作</h2></div></div><div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>管理员</th><th>操作</th><th>来源地址</th><th>时间</th></tr></thead><tbody>{audit.slice(0, 20).map((item, index) => <tr key={`${item.time}-${index}`}><td>{item.admin || "管理员账号已不存在"}</td><td className="admin-message">{item.action}</td><td>{item.remote_address}</td><td>{formatNotificationTime(item.time)}</td></tr>)}</tbody></table></div></section> : null}</> : null}
   </div>;
+}
+
+function AdminAccountProvisioner() {
+  const [email, setEmail] = useState(""); const [name, setName] = useState(""); const [password, setPassword] = useState(""); const [role, setRole] = useState<"owner" | "operator" | "analyst">("operator"); const [secret, setSecret] = useState(""); const [code, setCode] = useState(""); const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false);
+  const create = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setMessage(""); try { const result = await dormApi.adminCreateAccount(email, name, password, role); setSecret(result.secret); setMessage("账号已创建，请先将密钥导入验证器，再确认动态口令。"); } catch (error) { setMessage(error instanceof Error ? error.message : "管理员账号创建失败"); } finally { setBusy(false); } };
+  const confirm = async () => { setBusy(true); try { await dormApi.adminConfirmAccount(email, code); setMessage("管理员账号已启用"); setSecret(""); setCode(""); setEmail(""); setName(""); setPassword(""); setRole("operator"); } catch (error) { setMessage(error instanceof Error ? error.message : "动态口令确认失败"); } finally { setBusy(false); } };
+  return <section className="surface-card admin-panel admin-provisioner"><div className="section-heading"><div><span className="section-kicker">管理员账号</span><h2>创建独立后台账号</h2></div></div><form className="admin-provisioner-form" onSubmit={create}><TextField label="邮箱" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /><TextField label="名称" value={name} onChange={(event) => setName(event.target.value)} /><TextField label="独立密码（至少 16 位）" type="password" minLength={16} value={password} onChange={(event) => setPassword(event.target.value)} required /><label className="admin-provisioner-select">角色<select value={role} onChange={(event) => setRole(event.target.value as typeof role)}><option value="operator">运维管理员</option><option value="analyst">分析员</option><option value="owner">所有者</option></select></label><Button type="submit" variant="primary" disabled={busy || password.length < 16}>{busy ? "处理中…" : "创建账号"}</Button></form>{secret ? <div className="auth-success"><strong>一次性 TOTP 密钥</strong><code>{secret}</code><div><TextField label="当前动态口令" inputMode="numeric" value={code} onChange={(event) => setCode(event.target.value)} maxLength={6} /><Button type="button" onClick={() => void confirm()} disabled={busy || code.length !== 6}>确认启用</Button></div></div> : null}{message ? <div className="auth-success" role="status">{message}</div> : null}</section>;
 }
 
 function OverviewPage({ time, scheduled, scheduledTime, scheduleDays, records, successRate, successCount, isChecking, queue, connected, authenticated, accountConfigured, accountVerified, accountHint, onRunCheck, onNavigate, onSignIn }: { time: Date; scheduled: boolean; scheduledTime: string; scheduleDays: number[]; records: CheckRecord[]; successRate: number; successCount: number; isChecking: boolean; queue: ApiCheckQueue; connected: boolean; authenticated: boolean; accountConfigured: boolean; accountVerified: boolean; accountHint: string; onRunCheck: () => void; onNavigate: (page: Page) => void; onSignIn: () => void }) {
@@ -704,7 +750,7 @@ function HistoryPage({ records, filter, page, total, totalPages, loading, onPage
 function academicCacheLabel(meta: ApiAcademicDataMeta | null) {
   if (!meta?.fetched_at) return "尚未同步";
   const time = new Date(meta.fetched_at).toLocaleString("zh-CN", { hour12: false });
-  const status = meta.cache_status === "stale-fallback" ? " · 上游暂不可用，显示最近数据" : meta.cache_status === "stale" ? " · 后台更新中" : "";
+  const status = meta.cache_status === "stale-fallback" ? " · 上游暂不可用，显示最近数据" : meta.cache_status === "stale" ? " · 后台更新中" : meta.cache_status === "refreshed" ? " · 刚刚更新" : " · 缓存数据";
   return `上次同步 ${time}${status}`;
 }
 
@@ -1008,6 +1054,24 @@ function TotpSettings({ onNotificationsChanged }: { onNotificationsChanged: () =
 }
 
 type AuthOutcome = { complete: true; user: ApiUser | null } | { complete: false; email: string; totpRequired: boolean };
+
+function AdminLoginForm({ error, onSubmit }: { error: string; onSubmit: (email: string, password: string, code: string) => Promise<void> }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setBusy(true);
+    try { await onSubmit(email, password, code); } finally { setBusy(false); }
+  };
+  return <div className="auth-form-wrap"><div className="auth-form-heading"><span className="section-kicker">PRIVATE ADMIN</span><h2>管理后台</h2><p>管理员账号与普通用户账号相互独立。</p></div><form className="auth-form" onSubmit={submit}>
+    <TextField label="管理员邮箱" type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} required />
+    <TextField label="管理员密码" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={16} required />
+    <TextField label="验证器动态口令" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value)} maxLength={6} required />
+    {error ? <Notice title="登录未完成" tone="danger">{error}</Notice> : null}
+    <Button type="submit" variant="primary" disabled={busy || !email || password.length < 16 || code.length !== 6}>{busy ? "正在验证…" : "登录管理后台"}</Button>
+  </form><div className="auth-demo-notice"><ShieldCheck />仅允许配置的局域网或私有网络访问。</div></div>;
+}
 
 function AuthPage({ mode, onModeChange, onSubmit, onSendCode, onNotice, error, allowDemoReturn }: { mode: AuthMode; onModeChange: (mode: AuthMode | null) => void; onSubmit: (values: { name: string; email: string; password: string; emailCode: string; totpCode: string; phase: "credentials" | "verification" }) => Promise<AuthOutcome>; onSendCode: (email: string) => Promise<void>; onNotice: (message: string) => void; error: string; allowDemoReturn: boolean }) {
   const [showPassword, setShowPassword] = useState(false);

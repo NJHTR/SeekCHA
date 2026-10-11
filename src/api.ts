@@ -24,20 +24,31 @@ export type ApiAdminOverview = {
   queue: { queued: number; running: number; retry_wait: number };
   feature_use_today: { timetable: number; notices: number };
 };
-export type ApiAdminUser = { id: string; email: string; name: string; registered_at: string; credential_configured: boolean; credential_verified: boolean; schedule_enabled: boolean; last_run_status: string | null; last_run_at: string | null; admin_role: "owner" | "operator" | "analyst" | null };
+export type ApiAdminUser = { id: string; email: string; name: string; registered_at: string; credential_configured: boolean; credential_verified: boolean; schedule_enabled: boolean; last_run_status: string | null; last_run_at: string | null };
 export type ApiAdminRun = { id: string; email: string; name: string; status: "success" | "failure"; message: string; time: string; duration_ms: number };
 export type ApiAdminQueueItem = { id: string; email: string; name: string; trigger: string; status: string; attempts: number; max_attempts: number; created_at: string; not_before: string; started_at: string; reason: string };
 export type ApiAdminFeatureUse = { feature: "notices" | "schedule"; result: "success" | "failure"; time: string; name: string; email: string };
 export type ApiAdminAudit = { action: string; remote_address: string; time: string; admin: string };
 
 let csrfToken = "";
+let adminCsrfToken = "";
 let activeUserId = "anonymous";
 const browserAcademicCache = new Map<string, { expiresAt: number; value: unknown }>();
 const browserAcademicInFlight = new Map<string, Promise<unknown>>();
 const BROWSER_ACADEMIC_TTL = 60_000;
 
-function browserCacheKey(kind: string) {
-  return `dormcheck:${activeUserId}:academic:${kind}`;
+function browserCacheKey(kind: string, userId = activeUserId) {
+  const scope = kind === "schedule" ? `:${currentAcademicScope()}` : "";
+  return `dormcheck:${userId}:academic:${kind}${scope}`;
+}
+
+function currentAcademicScope() {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit",
+  }).formatToParts(new Date());
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  return `${month >= 8 ? year : year - 1}-${month >= 8 ? "3" : "12"}`;
 }
 
 function readBrowserAcademicCache<T>(kind: string): T | undefined {
@@ -58,7 +69,7 @@ function readBrowserAcademicCache<T>(kind: string): T | undefined {
 }
 
 function writeBrowserAcademicCache<T>(kind: string, value: T, userId = activeUserId) {
-  const key = `dormcheck:${userId}:academic:${kind}`;
+  const key = browserCacheKey(kind, userId);
   const entry = { expiresAt: Date.now() + BROWSER_ACADEMIC_TTL, value };
   browserAcademicCache.set(key, entry);
   try { sessionStorage.setItem(key, JSON.stringify(entry)); } catch { /* storage may be unavailable */ }
@@ -109,8 +120,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   deviceHeaders().forEach((value, name) => headers.set(name, value));
   headers.set("Accept", "application/json");
   if (options.body) headers.set("Content-Type", "application/json");
-  if (["POST", "PUT", "PATCH", "DELETE"].includes((options.method ?? "GET").toUpperCase()) && csrfToken) {
-    headers.set("X-CSRF-Token", csrfToken);
+  if (["POST", "PUT", "PATCH", "DELETE"].includes((options.method ?? "GET").toUpperCase())) {
+    const token = path.startsWith("/admin/") ? adminCsrfToken : csrfToken;
+    if (token) headers.set("X-CSRF-Token", token);
   }
   const response = await fetch(`/api${path}`, { ...options, headers, credentials: "same-origin", cache: "no-store" });
   const contentType = response.headers.get("content-type") ?? "";
@@ -221,12 +233,27 @@ export const dormApi = {
   revokeDevice: (id: string) => request<{ revoked: boolean }>(`/auth/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
   beginTotp: () => request<{ secret: string; otpauth_url: string }>("/auth/totp/setup", { method: "POST" }),
   confirmTotp: (code: string) => request<{ enabled: boolean }>("/auth/totp/confirm", { method: "POST", body: JSON.stringify({ code }) }),
-  adminMe: () => request<{ role: "owner" | "operator" | "analyst"; name: string }>("/admin/me"),
+  async adminSession() {
+    const result = await request<{ authenticated: boolean; csrf_token?: string; admin?: { id: string; email: string; name: string; role: "owner" | "operator" | "analyst" } }>("/admin/auth/session");
+    adminCsrfToken = result.csrf_token ?? "";
+    return result;
+  },
+  async adminLogin(email: string, password: string, code: string) {
+    const result = await request<{ authenticated: true; csrf_token: string; admin: { id: string; email: string; name: string; role: "owner" | "operator" | "analyst" } }>("/admin/auth/login", { method: "POST", body: JSON.stringify({ email, password, code }) });
+    adminCsrfToken = result.csrf_token;
+    return result;
+  },
+  async adminLogout() {
+    const result = await request<{ ok: boolean }>("/admin/auth/logout", { method: "POST" });
+    adminCsrfToken = "";
+    return result;
+  },
+  adminCreateAccount: (email: string, name: string, password: string, role: "owner" | "operator" | "analyst") => request<{ created: boolean; email: string; role: string; secret: string; otpauth_url: string }>("/admin/accounts", { method: "POST", body: JSON.stringify({ email, name, password, role }) }),
+  adminConfirmAccount: (email: string, code: string) => request<{ enabled: boolean; email: string }>("/admin/accounts/totp/confirm", { method: "POST", body: JSON.stringify({ email, code }) }),
   adminOverview: () => request<ApiAdminOverview>("/admin/overview"),
   adminUsers: (page = 1, query = "") => request<{ items: ApiAdminUser[]; page: number; page_size: number; total: number }>(`/admin/users?page=${page}&q=${encodeURIComponent(query)}`),
   adminRuns: (page = 1, status: "all" | "success" | "failure" = "all") => request<{ items: ApiAdminRun[]; page: number; page_size: number; total: number }>(`/admin/runs?page=${page}&status=${status}`),
   adminQueue: () => request<{ items: ApiAdminQueueItem[] }>("/admin/queue"),
   adminAudit: () => request<{ items: ApiAdminAudit[] }>("/admin/audit"),
   adminFeatures: (page = 1, feature: "all" | "notices" | "schedule" = "all") => request<{ items: ApiAdminFeatureUse[]; page: number; page_size: number; total: number }>(`/admin/features?page=${page}&feature=${feature}`),
-  adminSetRole: (userId: string, role: "none" | "owner" | "operator" | "analyst", reason: string) => request<{ updated: boolean; role: string }>("/admin/roles", { method: "PUT", body: JSON.stringify({ userId, role, reason }) }),
 };
