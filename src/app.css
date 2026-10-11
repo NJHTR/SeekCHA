@@ -181,6 +181,9 @@ button, input { font-family: inherit; }
 .admin-provisioner .auth-success { margin: 0 10px 12px; display: grid; gap: 8px; }
 .admin-provisioner .auth-success code { overflow-wrap: anywhere; }
 .admin-setup-secret { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface-soft); color: var(--muted); font-size: 9px; }
+.admin-setup-steps { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 9px; padding: 10px; border-left: 3px solid var(--green); background: var(--surface-soft); color: var(--muted); font-size: 9px; line-height: 1.5; }
+.admin-setup-steps strong { color: var(--ink); font-size: 9px; white-space: nowrap; }
+.admin-setup-secret-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .admin-setup-secret code { color: var(--ink); font-size: 12px; overflow-wrap: anywhere; }
 .admin-setup-secret a { color: var(--green); font-size: 9px; }
 .admin-table-wrap { overflow-x: auto; }
