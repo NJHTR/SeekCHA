@@ -1,0 +1,23 @@
+[Unit]
+Description=Dorm Check Redis cache
+After=network.target
+
+[Service]
+Type=simple
+User=redis
+Group=redis
+ExecStart=/usr/local/bin/redis-server /etc/redis/dorm-check.conf
+Restart=on-failure
+RestartSec=3s
+UMask=0077
+LimitNOFILE=65535
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/opt/dorm-check/var/redis /run/redis
+
+[Install]
+WantedBy=multi-user.target

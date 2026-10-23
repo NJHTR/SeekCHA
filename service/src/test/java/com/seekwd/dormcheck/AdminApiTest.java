@@ -16,11 +16,8 @@ import com.seekwd.dormcheck.service.SessionService;
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 import jakarta.servlet.http.Cookie;
-import java.nio.ByteBuffer;
 import java.time.Instant;
 import java.util.Properties;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,9 +51,10 @@ class AdminApiTest {
         doNothing().when(mail).send(any(MimeMessage.class));
         org.mockito.Mockito.when(mail.createMimeMessage()).thenAnswer(ignored -> new MimeMessage(Session.getInstance(new Properties())));
         jdbc.update("DELETE FROM admin_sessions"); jdbc.update("DELETE FROM admin_audit_logs"); jdbc.update("DELETE FROM admin_users");
+        jdbc.update("DELETE FROM admin_email_codes");
         jdbc.update("DELETE FROM admin_accounts"); jdbc.update("DELETE FROM feature_usage_events"); jdbc.update("DELETE FROM check_jobs");
         jdbc.update("DELETE FROM rate_limits"); jdbc.update("DELETE FROM user_totp"); jdbc.update("DELETE FROM auth_device_sessions");
-        jdbc.update("DELETE FROM auth_devices"); jdbc.update("DELETE FROM credentials"); jdbc.update("DELETE FROM schedules");
+        jdbc.update("DELETE FROM xiangqi_games"); jdbc.update("DELETE FROM auth_devices"); jdbc.update("DELETE FROM credentials"); jdbc.update("DELETE FROM schedules");
         jdbc.update("DELETE FROM sessions"); jdbc.update("DELETE FROM email_codes"); jdbc.update("DELETE FROM users");
     }
 
@@ -71,30 +69,38 @@ class AdminApiTest {
     }
 
     @Test
-    void privateAdminUsesSeparatePasswordTotpAndCookie() throws Exception {
-        JsonNode bootstrap = mapper.readTree(mvc.perform(post("/api/admin/auth/bootstrap").header("Origin", "http://localhost").header("Host", "localhost").contentType("application/json")
+    void privateAdminUsesSeparatePasswordEmailCodeAndCookie() throws Exception {
+        mvc.perform(post("/api/admin/auth/bootstrap").header("Origin", "http://localhost").header("Host", "localhost").contentType("application/json")
             .content("{\"token\":\"test-bootstrap\",\"email\":\"njhtr1018@gmail.com\",\"name\":\"NJHTR\",\"password\":\"a-very-long-admin-password\"}"))
-            .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray());
-        String code = totp(decodeBase32(bootstrap.get("secret").asText()), Instant.now().getEpochSecond() / 30);
-        mvc.perform(post("/api/admin/auth/bootstrap/confirm").header("Origin", "http://localhost").header("Host", "localhost").contentType("application/json")
-            .content("{\"token\":\"test-bootstrap\",\"email\":\"njhtr1018@gmail.com\",\"code\":\"" + code + "\"}"))
             .andExpect(status().isOk());
+        mvc.perform(post("/api/admin/auth/login/code").header("Origin", "http://localhost").header("Host", "localhost").contentType("application/json")
+            .content("{\"email\":\"njhtr1018@gmail.com\",\"password\":\"a-very-long-admin-password\"}"))
+            .andExpect(status().isOk());
+        org.mockito.ArgumentCaptor<SimpleMailMessage> capture = org.mockito.ArgumentCaptor.forClass(SimpleMailMessage.class);
+        org.mockito.Mockito.verify(mail, org.mockito.Mockito.atLeastOnce()).send(capture.capture());
+        String code = java.util.Arrays.stream(capture.getValue().getText().split("\\D+")).filter(value -> value.length() == 6).findFirst().orElseThrow();
         MvcResult login = mvc.perform(post("/api/admin/auth/login").header("Origin", "http://localhost").header("Host", "localhost").contentType("application/json")
             .content("{\"email\":\"njhtr1018@gmail.com\",\"password\":\"a-very-long-admin-password\",\"code\":\"" + code + "\"}"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.admin.role").value("owner")).andReturn();
+        mvc.perform(post("/api/admin/auth/login").header("Origin", "http://localhost").header("Host", "localhost").contentType("application/json")
+            .content("{\"email\":\"njhtr1018@gmail.com\",\"password\":\"a-very-long-admin-password\",\"code\":\"" + code + "\"}"))
+            .andExpect(status().isUnauthorized());
         mvc.perform(get("/api/admin/overview").cookie(login.getResponse().getCookie("dormcheck_admin_session")))
             .andExpect(status().isOk()).andExpect(jsonPath("$.admin.role").value("owner"));
+        register("search-one@qq.com");
+        register("search-two@qq.com");
+        mvc.perform(get("/api/admin/users").cookie(login.getResponse().getCookie("dormcheck_admin_session")).param("q", "' OR 1=1 --"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(0));
+        mvc.perform(get("/api/admin/users").cookie(login.getResponse().getCookie("dormcheck_admin_session")).param("q", "%"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.total").value(0));
+        mvc.perform(get("/api/admin/users").cookie(login.getResponse().getCookie("dormcheck_admin_session")).param("q", "x".repeat(121)))
+            .andExpect(status().isBadRequest()).andExpect(jsonPath("$.detail").value("search query is too long"));
         mvc.perform(get("/api/admin/overview").cookie(new Cookie(SessionService.COOKIE_NAME, "not-an-admin-token"))).andExpect(status().isUnauthorized());
         String adminCsrf = mapper.readTree(login.getResponse().getContentAsByteArray()).get("csrf_token").asText();
         JsonNode newAdmin = mapper.readTree(mvc.perform(post("/api/admin/accounts").header("Origin", "http://localhost").header("Host", "localhost")
             .header("X-CSRF-Token", adminCsrf).cookie(login.getResponse().getCookie("dormcheck_admin_session")).contentType("application/json")
             .content("{\"email\":\"operator@example.com\",\"name\":\"Operator\",\"password\":\"a-different-long-admin-password\",\"role\":\"analyst\"}"))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray());
-        String newAdminCode = totp(decodeBase32(newAdmin.get("secret").asText()), Instant.now().getEpochSecond() / 30);
-        mvc.perform(post("/api/admin/accounts/totp/confirm").header("Origin", "http://localhost").header("Host", "localhost")
-            .header("X-CSRF-Token", adminCsrf).cookie(login.getResponse().getCookie("dormcheck_admin_session")).contentType("application/json")
-            .content("{\"email\":\"operator@example.com\",\"code\":\"" + newAdminCode + "\"}"))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true));
         org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT role FROM admin_users WHERE email=?", String.class, "operator@example.com")).isEqualTo("analyst");
     }
 
@@ -106,6 +112,4 @@ class AdminApiTest {
             .andExpect(status().isOk()).andReturn();
     }
 
-    private static byte[] decodeBase32(String value) { String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"; int buffer = 0, bits = 0; java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream(); for (char c : value.toCharArray()) { buffer = (buffer << 5) | alphabet.indexOf(c); bits += 5; if (bits >= 8) { out.write((buffer >> (bits - 8)) & 255); bits -= 8; } } return out.toByteArray(); }
-    private static String totp(byte[] secret, long counter) throws Exception { Mac mac = Mac.getInstance("HmacSHA1"); mac.init(new SecretKeySpec(secret, "HmacSHA1")); byte[] digest = mac.doFinal(ByteBuffer.allocate(8).putLong(counter).array()); int offset = digest[digest.length - 1] & 15; int binary = ((digest[offset] & 127) << 24) | ((digest[offset + 1] & 255) << 16) | ((digest[offset + 2] & 255) << 8) | (digest[offset + 3] & 255); return String.format(java.util.Locale.ROOT, "%06d", binary % 1_000_000); }
 }

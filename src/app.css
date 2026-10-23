@@ -10,7 +10,6 @@
   background: var(--sk-bg-window);
   font-size: 13px;
 }
-
 * { box-sizing: border-box; }
 html, body, #root { min-width: 320px; min-height: 100%; margin: 0; }
 body { min-height: 100vh; }
@@ -86,6 +85,28 @@ button, input { font-family: inherit; }
 .sidebar-account-copy strong, .sidebar-account-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sidebar-account-copy strong { color: var(--ink); font-size: 11px; font-weight: 600; line-height: 1.2; }
 .sidebar-account-copy small { color: var(--muted); font-size: 9px; line-height: 1.2; }
+.admin-sidebar-shell { height: 100%; display: flex; flex-direction: column; padding: 22px 13px 14px; }
+.admin-sidebar-private { margin: 4px 8px; color: var(--muted); font-size: 9px; font-weight: 650; letter-spacing: .08em; }
+.admin-sidebar-account { margin-top: auto; padding: 12px 8px 0; display: grid; gap: 4px; border-top: 1px solid var(--line); }
+.admin-sidebar-account span { color: var(--muted); font-size: 9px; }
+.admin-sidebar-account strong { color: var(--ink); font-size: 11px; font-weight: 650; }
+.admin-sidebar-account .sk-button { justify-content: flex-start; margin-top: 5px; padding-left: 0; }
+.admin-topbar { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; }
+.admin-breadcrumbs { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.admin-breadcrumbs span { color: var(--green); font-size: 9px; font-weight: 700; letter-spacing: .08em; }
+.admin-breadcrumbs strong { color: var(--ink); font-size: 12px; font-weight: 650; }
+.admin-topbar-status { justify-self: end; display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 9px; }
+.admin-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.admin-footer { background: var(--surface-soft); }
+.admin-footer-label { color: var(--muted); font-size: 9px; }
+.admin-login-page { min-height: 100%; display: grid; place-items: center; }
+.admin-login-page .auth-form-wrap { width: min(440px, 100%); }
+.admin-overview-grid { margin-bottom: var(--layout-gap); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--layout-gap); }
+.admin-overview-metrics { padding: 8px 10px 14px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.admin-overview-metrics div { padding: 10px; border-radius: 5px; background: var(--surface-soft); }
+.admin-overview-metrics strong, .admin-overview-metrics span { display: block; }
+.admin-overview-metrics strong { color: var(--ink); font-size: 21px; font-variant-numeric: tabular-nums; }
+.admin-overview-metrics span { margin-top: 3px; color: var(--muted); font-size: 9px; }
 
 .dorm-main { width: 100%; height: 100%; min-width: 0; min-height: 0; display: grid; grid-template-rows: 40px minmax(0, 1fr) 36px; }
 .topbar { min-width: 0; padding: 0 18px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; border-bottom: 1px solid var(--line); background: var(--surface); }
@@ -174,6 +195,8 @@ button, input { font-family: inherit; }
 .admin-stats { margin-bottom: var(--layout-gap); }
 .admin-grid { margin-bottom: var(--layout-gap); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--layout-gap); align-items: start; }
 .admin-panel { min-width: 0; overflow: hidden; }
+.admin-topbar-actions { min-width: 0; display: flex; align-items: center; gap: 2px; }
+.admin-topbar-actions .sk-icon-button.is-active { color: var(--green); background: var(--surface-soft); }
 .admin-provisioner { margin-bottom: var(--layout-gap); }
 .admin-provisioner-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; align-items: end; padding: 0 10px 12px; }
 .admin-provisioner-select { display: grid; gap: 5px; color: var(--muted); font-size: 9px; }
@@ -198,8 +221,12 @@ button, input { font-family: inherit; }
 .admin-role-select { min-height: 26px; padding: 3px 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: var(--surface); font: inherit; font-size: 9px; }
 .admin-role-select:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .admin-search { min-width: 0; display: flex; align-items: center; gap: 6px; }
-.admin-search input { width: min(190px, 38vw); min-height: 28px; padding: 4px 7px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); background: var(--surface); font: inherit; font-size: 9px; }
-.admin-search input:focus-visible { outline: 2px solid var(--green); outline-offset: 1px; }
+.admin-search .sk-field { width: min(190px, 38vw); }
+.admin-filter-group { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 10px; }
+.admin-filter { display: grid; gap: 4px; }
+.admin-filter > span { color: var(--muted); font-size: 9px; }
+.admin-filter .sk-segmented { max-width: 100%; }
+.admin-filter .sk-segmented button { font-size: 10px; }
 .admin-pagination { min-height: 38px; padding: 5px 9px 0; display: flex; align-items: center; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 9px; }
 .admin-pagination > span:first-child { margin-right: auto; }
 .admin-empty, .admin-loading { min-height: 130px; display: grid; place-items: center; color: var(--muted); font-size: 10px; }
@@ -539,11 +566,211 @@ button, input { font-family: inherit; }
 .interface-settings-footer svg { width: 13px; height: 13px; }
 @keyframes interface-settings-in { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
 
+.xiangqi-page { width: min(var(--content-max-width), 100%); }
+.xiangqi-heading-actions { display: flex; align-items: center; gap: 8px; }
+.xiangqi-balance { display: flex; align-items: center; gap: 5px; }
+.xiangqi-balance span { min-height: 30px; padding: 0 9px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: var(--surface); font-size: 9px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.xiangqi-balance svg { width: 13px; height: 13px; color: #a8751e; }
+.xiangqi-error { min-height: 38px; margin: -8px 0 16px; padding: 8px 11px; display: flex; align-items: center; gap: 8px; border: 1px solid #e7c9c5; border-radius: 6px; color: #8b3f35; background: #fbefed; font-size: 10px; }
+.xiangqi-error svg { width: 15px; height: 15px; flex: 0 0 15px; }
+.xiangqi-error span { flex: 1; }
+.xiangqi-error button { padding: 2px 4px; border: 0; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.xiangqi-layout { display: grid; grid-template-columns: minmax(0, 1fr) 270px; align-items: start; gap: 14px; }
+.xiangqi-board-panel, .xiangqi-side, .xiangqi-entry-panel, .xiangqi-games-panel { min-width: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.xiangqi-board-panel { position: relative; padding: 15px 18px 18px; overflow: hidden; }
+.xiangqi-chat-bubble { position: absolute; z-index: 8; top: 78px; left: 50%; max-width: min(74%, 430px); padding: 8px 12px; display: flex; align-items: baseline; gap: 8px; border: 1px solid rgba(45,64,53,.16); border-radius: 7px; color: var(--ink); background: rgba(255,255,255,.94); box-shadow: 0 10px 28px rgba(42,58,49,.15); font-size: 10px; transform: translateX(-50%); animation: xiangqi-message-in 180ms ease-out; backdrop-filter: blur(8px); }
+.xiangqi-chat-bubble.is-mine { border-color: #bed8c7; background: rgba(238,248,241,.96); }
+.xiangqi-chat-bubble strong { flex: 0 0 auto; color: var(--green); font-size: 9px; }
+.xiangqi-chat-bubble span { overflow-wrap: anywhere; }
+@keyframes xiangqi-message-in { from { opacity: 0; transform: translate(-50%, -8px); } }
+.xiangqi-chat-compose { width: min(100%, 610px); margin: 4px auto 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 7px; }
+.xiangqi-chat-compose .sk-field { min-width: 0; }
+.xiangqi-table-head { min-height: 50px; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; }
+.xiangqi-player { min-width: 0; display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.xiangqi-player:last-child { justify-content: flex-end; text-align: right; }
+.xiangqi-player > span:last-child { min-width: 0; display: grid; gap: 2px; }
+.xiangqi-player small { color: var(--muted); font-size: 8px; }
+.xiangqi-player strong { overflow: hidden; color: var(--ink); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.xiangqi-player time { width: max-content; min-width: 45px; padding: 2px 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); background: var(--surface-soft); font-size: 9px; font-variant-numeric: tabular-nums; }
+.xiangqi-player time.is-running { border-color: #d8c28f; color: #765a1b; background: #fff7e6; }
+.xiangqi-player.is-me strong { color: var(--green); }
+.xiangqi-player-mark { width: 29px; height: 29px; flex: 0 0 29px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; background: var(--surface-soft); font-family: "PingFangSC-Regular", serif; font-size: 15px; font-weight: 700; }
+.xiangqi-player-mark.red { color: #a33d32; }
+.xiangqi-player-mark.black { color: #303833; }
+.xiangqi-turn-indicator { min-height: 27px; padding: 4px 9px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--surface-soft); font-size: 9px; white-space: nowrap; }
+.xiangqi-turn-indicator.is-mine { border-color: #c8dfd0; color: var(--green); background: #edf6f0; }
+.xiangqi-turn-indicator svg { width: 12px; height: 12px; }
+.turn-dot { width: 6px; height: 6px; border-radius: 50%; background: #9ca69f; }
+.turn-dot.red { background: #b54a3d; box-shadow: 0 0 0 3px #f7e8e4; }
+.turn-dot.black { background: #343c37; box-shadow: 0 0 0 3px #e9ecea; }
+.xiangqi-board-shell { --piece-size: clamp(30px, 10cqw, 58px); position: relative; width: min(100%, 610px); margin: 3px auto 6px; padding-bottom: 22px; container-type: inline-size; }
+.xiangqi-game-meta { width: min(100%, 610px); min-height: 26px; margin: 0 auto 4px; display: flex; align-items: center; justify-content: center; gap: 9px; color: var(--muted); font-size: 8px; font-variant-numeric: tabular-nums; }
+.xiangqi-game-meta i { width: 3px; height: 3px; border-radius: 50%; background: #aebbb2; }
+.xiangqi-board { position: relative; box-sizing: border-box; width: 100%; aspect-ratio: 8 / 9; overflow: hidden; border: 1px solid #b79a72; border-radius: 5px; background: #dfc69d; background-image: linear-gradient(90deg, rgba(255,255,255,.13), transparent 30%, rgba(104,72,35,.035) 75%), repeating-linear-gradient(7deg, rgba(104,69,34,.022) 0 1px, transparent 1px 9px); box-shadow: inset 0 0 24px rgba(105,72,34,.12), 0 10px 30px rgba(73,52,30,.08); }
+.xiangqi-lines { position: absolute; inset: 6%; width: 88%; height: 88%; overflow: visible; pointer-events: none; }
+.xiangqi-grid-lines { fill: none; stroke: #715638; stroke-width: .018; vector-effect: non-scaling-stroke; shape-rendering: crispEdges; }
+.xiangqi-river { fill: #dfc69d; }
+.xiangqi-river-text { fill: #806646; font-family: "PingFangSC-Regular", "STKaiti", serif; font-size: .2px; letter-spacing: .025px; text-anchor: middle; }
+.xiangqi-points { position: absolute; inset: 6%; z-index: 3; }
+.xiangqi-point { position: absolute; width: 12.5%; height: 11.1111%; padding: 0; display: grid; place-items: center; border: 0; background: transparent; cursor: pointer; touch-action: manipulation; transform: translate(-50%, -50%); }
+.xiangqi-point:disabled { cursor: default; }
+.xiangqi-point:focus-visible { outline: none; }
+.xiangqi-point:focus-visible .xiangqi-hit-target { outline: 2px solid #326b50; outline-offset: 1px; }
+.xiangqi-hit-target { position: absolute; z-index: 0; width: min(86%, 54px); max-width: 54px; aspect-ratio: 1; border-radius: 50%; }
+.xiangqi-point.is-last .xiangqi-hit-target { background: rgba(74,121,91,.16); box-shadow: inset 0 0 0 1px rgba(54,105,76,.34); }
+.xiangqi-point.is-target .xiangqi-hit-target { background: rgba(37,115,77,.15); box-shadow: inset 0 0 0 1px rgba(37,115,77,.5); }
+.xiangqi-point.is-target .xiangqi-hit-target:after { position: absolute; top: 50%; left: 50%; width: 7px; height: 7px; border-radius: 50%; content: ""; background: #367455; transform: translate(-50%, -50%); }
+.xiangqi-piece { position: relative; z-index: 1; width: var(--piece-size); height: var(--piece-size); display: grid; place-items: center; border: 2px solid currentColor; border-radius: 50%; background: radial-gradient(circle at 38% 30%, #fffaf0 0 22%, #f1dfbd 63%, #d2b17d 100%); box-shadow: inset 0 0 0 3px #e9d3aa, inset 0 0 0 4px currentColor, 0 3px 5px rgba(66,45,23,.22); font-family: "PingFangSC-Regular", "STKaiti", serif; font-size: calc(var(--piece-size) * .58); line-height: 1; font-weight: 700; user-select: none; transition: transform 120ms ease, box-shadow 120ms ease; }
+.xiangqi-piece.red { color: #a23931; }
+.xiangqi-piece.black { color: #242c27; }
+.xiangqi-point:not(:disabled):hover .xiangqi-piece { transform: translateY(-1px); box-shadow: inset 0 0 0 3px #e9d3aa, inset 0 0 0 4px currentColor, 0 5px 8px rgba(66,45,23,.25); }
+.xiangqi-point.is-selected .xiangqi-piece { transform: translateY(-2px); box-shadow: inset 0 0 0 3px #fff2c9, inset 0 0 0 4px currentColor, 0 0 0 3px rgba(37,115,77,.35), 0 7px 12px rgba(66,45,23,.26); }
+.xiangqi-point.is-check .xiangqi-piece { animation: xiangqi-check 900ms ease-in-out infinite alternate; }
+@keyframes xiangqi-check { from { box-shadow: inset 0 0 0 3px #ffe7dd, inset 0 0 0 4px currentColor, 0 0 0 2px rgba(166,50,38,.2); } to { box-shadow: inset 0 0 0 3px #ffe7dd, inset 0 0 0 4px currentColor, 0 0 0 5px rgba(166,50,38,.28); } }
+.xiangqi-file-labels { position: absolute; right: 6%; bottom: 1px; left: 6%; display: grid; grid-template-columns: repeat(9, 1fr); color: #8c7759; font-size: 7px; font-variant-numeric: tabular-nums; text-align: center; }
+.xiangqi-waiting, .xiangqi-result { position: absolute; z-index: 6; top: 50%; left: 50%; min-width: 210px; padding: 16px 20px; display: grid; justify-items: center; gap: 5px; border: 1px solid rgba(76,97,83,.18); border-radius: 8px; color: var(--ink); background: rgba(255,255,255,.94); box-shadow: 0 16px 44px rgba(50,66,56,.16); text-align: center; transform: translate(-50%, -50%); backdrop-filter: blur(8px); }
+.xiangqi-waiting .sk-button { margin-top: 8px; }
+.xiangqi-waiting strong, .xiangqi-result strong { font-size: 14px; }
+.xiangqi-waiting > span:last-child, .xiangqi-result > span { color: var(--muted); font-size: 9px; }
+.xiangqi-waiting .sk-button, .xiangqi-result .sk-button { margin-top: 5px; }
+.waiting-pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 0 rgba(37,115,77,.3); animation: xiangqi-pulse 1.8s ease-out infinite; }
+@keyframes xiangqi-pulse { 70%, 100% { box-shadow: 0 0 0 9px rgba(37,115,77,0); } }
+.xiangqi-result.is-win { border-color: #c4ddcd; background: rgba(242,250,245,.96); }
+.xiangqi-result.is-loss { border-color: #e5cfca; background: rgba(253,247,246,.96); }
+.xiangqi-result.is-draw { border-color: #d9dedb; }
+.xiangqi-side { overflow: hidden; }
+.xiangqi-room-strip { min-height: 61px; padding: 11px 13px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid var(--line); background: var(--surface-soft); }
+.xiangqi-room-strip > div { min-width: 0; display: grid; gap: 3px; }
+.xiangqi-room-strip small { color: var(--muted); font-size: 8px; }
+.xiangqi-room-strip strong { color: var(--ink); font-size: 17px; letter-spacing: .11em; font-variant-numeric: tabular-nums; }
+.xiangqi-actions { min-height: 49px; padding: 9px 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--line); }
+.xiangqi-match-card { padding: 15px 13px; }
+.xiangqi-match-card h2 { margin: 4px 0 6px; color: var(--ink); font-size: 13px; }
+.xiangqi-match-card p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.6; }
+.xiangqi-match-card > div { margin-top: 13px; display: flex; gap: 7px; }
+.xiangqi-match-card > div span { padding: 5px 7px; display: inline-flex; align-items: center; gap: 4px; border-radius: 4px; color: var(--muted); background: var(--surface-soft); font-size: 8px; }
+.xiangqi-match-card svg { width: 11px; height: 11px; }
+.xiangqi-action-note { color: var(--muted); font-size: 9px; }
+.xiangqi-history { min-height: 330px; padding: 13px; }
+.xiangqi-section-title { min-height: 32px; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.xiangqi-section-title h2 { margin: 3px 0 0; color: var(--ink); font-size: 13px; font-weight: 650; }
+.xiangqi-history-empty, .xiangqi-empty { min-height: 220px; display: grid; place-content: center; justify-items: center; gap: 5px; color: var(--muted); font-size: 9px; text-align: center; }
+.xiangqi-empty svg { width: 19px; height: 19px; color: #86a08e; }
+.xiangqi-empty strong { margin-top: 3px; color: var(--ink); font-size: 11px; }
+.xiangqi-move-list { max-height: 380px; margin-top: 8px; overflow: auto; border-top: 1px solid var(--line); }
+.xiangqi-move-row { min-height: 31px; display: grid; grid-template-columns: 22px 20px 24px minmax(0, 1fr) auto; align-items: center; gap: 5px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 8px; }
+.xiangqi-move-row > span { font-variant-numeric: tabular-nums; text-align: right; }
+.xiangqi-move-row > i { width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; font-size: 8px; font-style: normal; }
+.xiangqi-move-row > i.red { color: #a33d32; }
+.xiangqi-move-row > i.black { color: #303833; }
+.xiangqi-move-row > strong { color: var(--ink); font-family: "PingFangSC-Regular", serif; font-size: 11px; }
+.xiangqi-move-row code { color: var(--muted); font-family: inherit; font-variant-numeric: tabular-nums; }
+.xiangqi-move-row small { color: #a35d43; font-size: 8px; }
+.xiangqi-lobby { display: grid; gap: var(--layout-gap); }
+.xiangqi-profile-strip { min-height: 74px; padding: 12px 18px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.xiangqi-profile-strip > div { padding: 5px 13px; display: grid; align-content: center; gap: 5px; border-right: 1px solid var(--line); }
+.xiangqi-profile-strip > div:last-child { border-right: 0; }
+.xiangqi-profile-strip small { color: var(--muted); font-size: 8px; }
+.xiangqi-profile-strip strong { display: flex; align-items: center; gap: 6px; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; }
+.xiangqi-profile-strip svg { width: 15px; height: 15px; color: #a8751e; }
+.xiangqi-match-panel { min-height: 112px; padding: 18px 20px; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 15px; border: 1px solid #bcd7c6; border-radius: 8px; background: linear-gradient(90deg, #f4faf6, var(--surface)); }
+.xiangqi-entry-icon.is-searching svg { animation: xiangqi-search 1.5s ease-in-out infinite; }
+@keyframes xiangqi-search { 50% { transform: scale(.78) rotate(-12deg); opacity: .55; } }
+.xiangqi-reward-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--layout-gap); }
+.xiangqi-reward-card { min-height: 145px; padding: 16px 18px; display: grid; grid-template-rows: auto 1fr auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.xiangqi-reward-card > div { display: flex; align-items: center; gap: 10px; }
+.xiangqi-reward-card > div > svg { width: 25px; height: 25px; padding: 5px; border-radius: 6px; color: #936a20; background: #f8edd7; }
+.xiangqi-reward-card span { display: grid; gap: 3px; }
+.xiangqi-reward-card small { color: var(--muted); font-size: 8px; }
+.xiangqi-reward-card strong { color: var(--ink); font-size: 12px; }
+.xiangqi-reward-card p { margin: 11px 0; color: var(--muted); font-size: 9px; }
+.xiangqi-reward-card .sk-button { justify-self: start; }
+.xiangqi-ad-stage { min-height: 180px; display: grid; place-content: center; justify-items: center; gap: 8px; color: var(--muted); text-align: center; }
+.xiangqi-ad-stage > svg { width: 42px; height: 42px; padding: 10px; border-radius: 50%; color: #936a20; background: #f8edd7; }
+.xiangqi-ad-stage strong { color: var(--ink); font-size: 14px; }
+.xiangqi-ad-stage span { font-size: 9px; }
+.xiangqi-ad-stage > div { width: 220px; height: 5px; margin-top: 8px; overflow: hidden; border-radius: 9px; background: var(--surface-soft); }
+.xiangqi-ad-stage i { height: 100%; display: block; border-radius: inherit; background: var(--green); transition: width 250ms linear; }
+.xiangqi-offer-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.xiangqi-offer-summary > span { min-height: 76px; padding: 12px; display: grid; grid-template-columns: 22px 1fr; align-content: center; column-gap: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-soft); }
+.xiangqi-offer-summary svg { width: 18px; height: 18px; grid-row: span 2; align-self: center; color: #9a7124; }
+.xiangqi-offer-summary strong { color: var(--ink); font-size: 12px; }
+.xiangqi-offer-summary small { color: var(--muted); font-size: 8px; }
+.xiangqi-relief-note { padding: 12px; border-radius: 6px; color: #765a1b; background: #fbf3e2; font-size: 10px; line-height: 1.6; }
+.xiangqi-match-backdrop { position: fixed; z-index: 110; inset: 0; padding: 18px; display: grid; place-items: center; background: rgba(14,22,18,.48); backdrop-filter: blur(7px); }
+.xiangqi-match-dialog { position: relative; width: min(390px, 100%); min-height: 430px; padding: 34px 28px 25px; display: grid; align-content: center; justify-items: center; border: 1px solid rgba(255,255,255,.64); border-radius: 10px; color: var(--ink); background: var(--surface); box-shadow: 0 28px 90px rgba(11,23,16,.27); text-align: center; animation: xiangqi-match-in 220ms ease-out; }
+@keyframes xiangqi-match-in { from { opacity: 0; transform: translateY(8px) scale(.985); } }
+.xiangqi-match-close { position: absolute; top: 13px; right: 13px; width: 31px; height: 31px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: transparent; cursor: pointer; }
+.xiangqi-match-close svg { width: 15px; height: 15px; }
+.xiangqi-match-orbit { position: relative; width: 142px; height: 142px; margin-bottom: 19px; display: grid; place-items: center; }
+.xiangqi-match-globe { width: 59px; height: 59px; color: #3f8061; stroke-width: 1.25; animation: xiangqi-globe 9s linear infinite; }
+@keyframes xiangqi-globe { to { transform: rotate(360deg); } }
+.xiangqi-match-ring { position: absolute; inset: 6px; border: 2px solid rgba(53,128,91,.12); border-top-color: #3f8061; border-right-color: #94b5a1; border-radius: 50%; animation: xiangqi-orbit 1.6s linear infinite; }
+.xiangqi-match-ring:before { position: absolute; top: 9px; right: 13px; width: 7px; height: 7px; border-radius: 50%; content: ""; background: #b47e29; box-shadow: 0 0 0 4px rgba(180,126,41,.12); }
+.xiangqi-match-loader { position: absolute; inset: -5px; width: 152px; height: 152px; color: rgba(63,128,97,.28); stroke-width: .75; animation: xiangqi-orbit 8s linear infinite reverse; }
+@keyframes xiangqi-orbit { to { transform: rotate(360deg); } }
+.xiangqi-match-dialog h2 { margin: 7px 0 4px; font-size: 17px; }
+.xiangqi-match-dialog > p { margin: 0; color: var(--muted); font-size: 10px; }
+.xiangqi-match-stats { width: 100%; margin: 24px 0 18px; padding: 12px 0; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.xiangqi-match-stats > span { display: grid; gap: 5px; border-right: 1px solid var(--line); }
+.xiangqi-match-stats > span:last-child { border: 0; }
+.xiangqi-match-stats small { color: var(--muted); font-size: 8px; }
+.xiangqi-match-stats strong { color: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; }
+.xiangqi-record-backdrop { position: fixed; z-index: 90; inset: 0; display: flex; justify-content: flex-end; background: rgba(19,28,23,.25); backdrop-filter: blur(2px); }
+.xiangqi-record-drawer { width: min(430px, 94vw); height: 100%; display: grid; grid-template-rows: auto auto minmax(0, 1fr); border-left: 1px solid var(--line); background: var(--surface); box-shadow: -18px 0 50px rgba(23,35,28,.18); animation: xiangqi-drawer-in 180ms ease-out; }
+@keyframes xiangqi-drawer-in { from { transform: translateX(30px); opacity: .4; } }
+.xiangqi-record-drawer > header { min-height: 72px; padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+.xiangqi-record-drawer h2 { margin: 4px 0 0; color: var(--ink); font-size: 15px; }
+.xiangqi-record-drawer header button { width: 31px; height: 31px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 5px; color: var(--muted); background: transparent; cursor: pointer; }
+.xiangqi-record-drawer header svg { width: 15px; height: 15px; }
+.xiangqi-record-tabs { padding: 8px 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; border-bottom: 1px solid var(--line); }
+.xiangqi-record-tabs button { min-height: 33px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 0; border-radius: 5px; color: var(--muted); background: transparent; font: inherit; font-size: 9px; cursor: pointer; }
+.xiangqi-record-tabs button.active { color: var(--ink); background: var(--surface-soft); font-weight: 650; }
+.xiangqi-record-tabs svg { width: 13px; height: 13px; }
+.xiangqi-chat-log, .xiangqi-drawer-moves { min-height: 0; padding: 14px; overflow: auto; }
+.xiangqi-chat-log > div:not(.xiangqi-history-empty) { margin-bottom: 10px; display: grid; justify-items: start; }
+.xiangqi-chat-log > div.mine { justify-items: end; }
+.xiangqi-chat-log span { display: flex; gap: 7px; color: var(--muted); font-size: 8px; }
+.xiangqi-chat-log p { max-width: 84%; margin: 4px 0 0; padding: 8px 10px; border-radius: 6px; color: var(--ink); background: var(--surface-soft); font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+.xiangqi-chat-log .mine p { color: #174f34; background: #e8f4ec; }
+.xiangqi-entry-panel { min-height: 112px; padding: 18px 20px; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; align-items: center; gap: 15px; }
+.xiangqi-entry-icon { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 7px; color: #286d4e; background: #e8f3ec; }
+.xiangqi-entry-icon.secondary { color: #3f6178; background: #ebf1f5; }
+.xiangqi-entry-icon svg { width: 20px; height: 20px; }
+.xiangqi-entry-copy { min-width: 0; }
+.xiangqi-entry-copy h2 { margin: 4px 0 4px; color: var(--ink); font-size: 14px; font-weight: 650; }
+.xiangqi-entry-copy p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
+.xiangqi-join-form { grid-column: 2 / 4; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, .7fr); align-items: end; gap: 18px; }
+.xiangqi-join-row { display: grid; grid-template-columns: minmax(120px, 1fr) auto; align-items: end; gap: 7px; }
+.xiangqi-join-row .sk-field input { letter-spacing: .12em; font-variant-numeric: tabular-nums; text-transform: uppercase; }
+.xiangqi-games-panel { padding: 15px 18px 9px; }
+.xiangqi-game-list { border-top: 1px solid var(--line); }
+.xiangqi-game-row { width: 100%; min-height: 59px; padding: 8px 3px; display: grid; grid-template-columns: 28px minmax(0, 1fr) auto 15px; align-items: center; gap: 10px; border: 0; border-bottom: 1px solid var(--line); color: var(--muted); background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.xiangqi-game-row:hover, .xiangqi-game-row:focus-visible { background: var(--surface-soft); }
+.xiangqi-game-row:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
+.xiangqi-game-color { width: 26px; height: 26px; display: grid; place-items: center; border: 1px solid currentColor; border-radius: 50%; background: #f8ecd5; font-family: "PingFangSC-Regular", serif; font-size: 13px; font-weight: 700; }
+.xiangqi-game-color.red { color: #a33d32; }
+.xiangqi-game-color.black { color: #303833; }
+.xiangqi-game-main { min-width: 0; display: grid; gap: 3px; }
+.xiangqi-game-main strong, .xiangqi-game-main small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xiangqi-game-main strong { color: var(--ink); font-size: 10px; font-weight: 600; }
+.xiangqi-game-main small { color: var(--muted); font-size: 8px; }
+.xiangqi-game-status { padding: 3px 6px; border-radius: 4px; background: var(--surface-soft); font-size: 8px; white-space: nowrap; }
+.xiangqi-game-status.active { color: var(--green); background: #eaf4ed; }
+.xiangqi-game-status.finished { color: var(--muted); }
+.xiangqi-game-row > svg { width: 14px; height: 14px; }
+.xiangqi-dialog-copy { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.dorm-app[data-sk-theme="dark"] .xiangqi-waiting, .dorm-app[data-sk-theme="dark"] .xiangqi-result { border-color: #506058; background: rgba(37,46,41,.95); }
+.dorm-app[data-sk-theme="dark"] .xiangqi-result.is-win { background: rgba(34,53,42,.96); }
+.dorm-app[data-sk-theme="dark"] .xiangqi-result.is-loss { background: rgba(57,38,36,.96); }
+.dorm-app[data-sk-theme="dark"] .xiangqi-turn-indicator.is-mine, .dorm-app[data-sk-theme="dark"] .xiangqi-game-status.active { background: #30433a; }
+
 @media (max-width: 1120px) {
   .page-content { padding-right: 22px; padding-left: 22px; }
   .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .admin-grid { grid-template-columns: minmax(0, 1fr); }
   .admin-provisioner-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .xiangqi-layout { grid-template-columns: minmax(0, 1fr) 292px; }
 }
 
 @media (max-width: 820px) {
@@ -557,7 +784,11 @@ button, input { font-family: inherit; }
   .side-nav::-webkit-scrollbar { display: none; }
   .side-nav .sk-sidebar-item { width: auto; min-height: 34px; flex: 0 0 auto; }
   .dorm-sidebar > .sk-sidebar-section h3, .sidebar-account { display: none; }
+  .sidebar-account { display: none; }
   .topbar { min-height: 38px; padding: 0 12px; }
+  .admin-topbar { grid-template-columns: minmax(0, 1fr) auto; gap: 4px; }
+  .admin-topbar-status { display: none; }
+  .admin-topbar-actions { grid-column: 2; }
   .breadcrumb-github { margin-left: 6px; padding-left: 6px; }
   .site-footer { padding: 0 10px; }
   .page-content { padding: 22px 16px 32px; }
@@ -566,6 +797,10 @@ button, input { font-family: inherit; }
   .status-card { min-height: 210px; }
   .timetable-grid--week { min-width: 960px; grid-template-columns: 76px repeat(7, minmax(126px, 1fr)); }
   .timetable-month-grid { min-width: 900px; }
+  .xiangqi-layout { grid-template-columns: minmax(0, 1fr); }
+  .xiangqi-history { min-height: 0; }
+  .xiangqi-move-list { max-height: 240px; }
+  .xiangqi-join-form { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 11px; }
 }
 
 @media (max-width: 560px) {
@@ -627,4 +862,43 @@ button, input { font-family: inherit; }
   .interface-choice-grid { gap: 5px; }
   .interface-choice { padding-right: 5px; padding-left: 5px; }
   .interface-choice small { font-size: 7px; }
+  .xiangqi-heading { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .xiangqi-heading-actions { width: 100%; justify-content: space-between; }
+  .xiangqi-board-panel { padding-right: 8px; padding-left: 8px; }
+  .xiangqi-board-shell { padding-bottom: 18px; }
+  .xiangqi-table-head { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 7px; }
+  .xiangqi-turn-indicator { grid-row: 2; grid-column: 1 / 3; justify-self: center; }
+  .xiangqi-player strong { font-size: 9px; }
+  .xiangqi-player-mark { width: 25px; height: 25px; flex-basis: 25px; font-size: 13px; }
+  .xiangqi-entry-panel { padding: 14px; grid-template-columns: 35px minmax(0, 1fr); gap: 10px; }
+  .xiangqi-profile-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 9px; }
+  .xiangqi-profile-strip > div { border-right: 0; border-bottom: 1px solid var(--line); }
+  .xiangqi-profile-strip > div:nth-last-child(-n+2) { border-bottom: 0; }
+  .xiangqi-match-panel { padding: 14px; grid-template-columns: 35px minmax(0, 1fr); gap: 10px; }
+  .xiangqi-match-panel > .sk-button { grid-column: 1 / 3; justify-content: center; }
+  .xiangqi-chat-bubble { top: 96px; max-width: 86%; }
+  .xiangqi-game-meta { gap: 6px; font-size: 7px; }
+  .xiangqi-match-dialog { min-height: 400px; padding-right: 20px; padding-left: 20px; }
+  .xiangqi-entry-panel > .sk-button { grid-column: 1 / 3; justify-content: center; }
+  .xiangqi-entry-icon { width: 35px; height: 35px; }
+  .xiangqi-join-form { grid-column: 1 / 3; }
+  .xiangqi-join-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .xiangqi-games-panel { padding-right: 12px; padding-left: 12px; }
+  .xiangqi-game-row { grid-template-columns: 26px minmax(0, 1fr) auto; gap: 7px; }
+  .xiangqi-game-row > svg { display: none; }
+  .xiangqi-room-strip strong { font-size: 15px; }
+}
+
+@media (max-width: 390px) {
+  .xiangqi-piece { border-width: 1px; box-shadow: inset 0 0 0 2px #e9d3aa, inset 0 0 0 3px currentColor, 0 2px 4px rgba(66,45,23,.2); }
+  .xiangqi-game-status { display: none; }
+  .xiangqi-game-row { grid-template-columns: 26px minmax(0, 1fr); }
+  .xiangqi-balance { width: 100%; }
+  .xiangqi-balance span { flex: 1; justify-content: center; }
+  .xiangqi-chat-compose { grid-template-columns: minmax(0, 1fr); }
+  .xiangqi-chat-compose .sk-button { justify-content: center; }
+  .xiangqi-profile-strip { grid-template-columns: minmax(0, 1fr); }
+  .xiangqi-profile-strip > div { border-bottom: 1px solid var(--line) !important; }
+  .xiangqi-profile-strip > div:last-child { border-bottom: 0 !important; }
+  .xiangqi-offer-summary { grid-template-columns: minmax(0, 1fr); }
 }

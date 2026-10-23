@@ -18,7 +18,11 @@
   </select>
   <insert id="upsert">
     INSERT INTO academic_cache(user_id,cache_type,credential_version,payload,fetched_at,fresh_until,stale_until,updated_at)
-    VALUES(#{userId},#{cacheType},#{credentialVersion},#{payload},#{fetchedAt},#{freshUntil},#{staleUntil},#{updatedAt})
+    SELECT #{userId},#{cacheType},#{credentialVersion},#{payload},#{fetchedAt},#{freshUntil},#{staleUntil},#{updatedAt}
+    WHERE EXISTS (
+      SELECT 1 FROM credentials
+      WHERE user_id=#{userId} AND updated_at=#{credentialVersion}
+    )
     ON CONFLICT(user_id,cache_type) DO UPDATE SET
       credential_version=excluded.credential_version,
       payload=excluded.payload,
@@ -26,6 +30,10 @@
       fresh_until=excluded.fresh_until,
       stale_until=excluded.stale_until,
       updated_at=excluded.updated_at
+    WHERE EXISTS (
+      SELECT 1 FROM credentials
+      WHERE user_id=excluded.user_id AND updated_at=excluded.credential_version
+    )
   </insert>
   <delete id="delete">
     DELETE FROM academic_cache WHERE user_id=#{userId} AND cache_type=#{cacheType}

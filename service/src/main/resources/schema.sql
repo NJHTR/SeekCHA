@@ -94,6 +94,82 @@ CREATE TABLE IF NOT EXISTS academic_cache (
   PRIMARY KEY(user_id, cache_type)
 );
 CREATE INDEX IF NOT EXISTS academic_cache_expiry ON academic_cache(stale_until);
+CREATE TABLE IF NOT EXISTS xiangqi_games (
+  id TEXT PRIMARY KEY,
+  room_code TEXT NOT NULL UNIQUE,
+  host_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  guest_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+  status TEXT NOT NULL CHECK(status IN ('waiting', 'active', 'finished')),
+  move_history TEXT NOT NULL DEFAULT '[]',
+  version INTEGER NOT NULL DEFAULT 1,
+  winner_color TEXT CHECK(winner_color IN ('red', 'black')),
+  draw_offer_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+  finish_reason TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  red_clock_ms INTEGER NOT NULL DEFAULT 90000,
+  black_clock_ms INTEGER NOT NULL DEFAULT 90000,
+  turn_started_at TEXT,
+  game_type TEXT NOT NULL DEFAULT 'friend' CHECK(game_type IN ('friend','ranked')),
+  started_at TEXT
+);
+CREATE INDEX IF NOT EXISTS xiangqi_games_host ON xiangqi_games(host_user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS xiangqi_games_guest ON xiangqi_games(guest_user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS xiangqi_games_expiry ON xiangqi_games(expires_at);
+CREATE TABLE IF NOT EXISTS xiangqi_wallets (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  coins INTEGER NOT NULL DEFAULT 10000 CHECK(coins >= 0),
+  rating INTEGER NOT NULL DEFAULT 1000 CHECK(rating >= 0),
+  rated_games INTEGER NOT NULL DEFAULT 0,
+  wins INTEGER NOT NULL DEFAULT 0,
+  losses INTEGER NOT NULL DEFAULT 0,
+  draws INTEGER NOT NULL DEFAULT 0,
+  relief_claims INTEGER NOT NULL DEFAULT 0 CHECK(relief_claims BETWEEN 0 AND 2),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS xiangqi_game_entries (
+  game_id TEXT PRIMARY KEY REFERENCES xiangqi_games(id) ON DELETE CASCADE,
+  stake INTEGER NOT NULL DEFAULT 2500,
+  settled INTEGER NOT NULL DEFAULT 0 CHECK(settled IN (0,1)),
+  created_at TEXT NOT NULL,
+  settled_at TEXT
+);
+CREATE TABLE IF NOT EXISTS xiangqi_match_queue (
+  user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  rating INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS xiangqi_match_queue_time ON xiangqi_match_queue(created_at);
+CREATE TABLE IF NOT EXISTS xiangqi_messages (
+  id TEXT PRIMARY KEY,
+  game_id TEXT NOT NULL REFERENCES xiangqi_games(id) ON DELETE CASCADE,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS xiangqi_messages_game_time ON xiangqi_messages(game_id, created_at);
+CREATE TABLE IF NOT EXISTS xiangqi_ad_sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reward_date TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('started','rewarded','expired')),
+  available_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  rewarded_at TEXT
+);
+CREATE INDEX IF NOT EXISTS xiangqi_ad_sessions_user_date ON xiangqi_ad_sessions(user_id, reward_date, status);
+CREATE TABLE IF NOT EXISTS xiangqi_ledger (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  delta INTEGER NOT NULL,
+  reason TEXT NOT NULL,
+  reference_id TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS xiangqi_ledger_user_time ON xiangqi_ledger(user_id, created_at DESC);
 CREATE TABLE IF NOT EXISTS email_codes (
   email TEXT NOT NULL,
   purpose TEXT NOT NULL CHECK(purpose IN ('register', 'login')),
@@ -156,6 +232,12 @@ CREATE TABLE IF NOT EXISTS admin_users (
   last_login_at TEXT
 );
 CREATE INDEX IF NOT EXISTS admin_users_role ON admin_users(role);
+CREATE TABLE IF NOT EXISTS admin_email_codes (
+  email TEXT PRIMARY KEY,
+  code_hash TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0
+);
 CREATE TABLE IF NOT EXISTS admin_sessions (
   token_hash TEXT PRIMARY KEY,
   admin_user_id TEXT NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,

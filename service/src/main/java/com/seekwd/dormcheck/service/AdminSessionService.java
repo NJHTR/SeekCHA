@@ -73,9 +73,14 @@ public class AdminSessionService {
 
     private String cookie(HttpServletRequest request) {
         if (request.getCookies() == null) return null;
+        String value = null;
         for (var cookie : request.getCookies()) {
-            if (COOKIE_NAME.equals(cookie.getName()) && !cookie.getValue().isBlank()) return cookie.getValue();
+            if (COOKIE_NAME.equals(cookie.getName())) {
+                if (value != null) return null;
+                if (cookie.getValue() == null || cookie.getValue().isBlank()) return null;
+                value = cookie.getValue();
+            }
         }
-        return null;
+        return value;
     }
 }

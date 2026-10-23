@@ -4,6 +4,7 @@ import com.seekwd.dormcheck.service.impl.AuthSecurityService;
 import com.seekwd.dormcheck.service.SessionService;
 import com.seekwd.dormcheck.service.AdminService;
 import com.seekwd.dormcheck.service.AdminAuthService;
+import com.seekwd.dormcheck.service.XiangqiService;
 import com.seekwd.dormcheck.api.dto.AuthRequest;
 import com.seekwd.dormcheck.api.dto.CredentialRequest;
 import com.seekwd.dormcheck.api.dto.EmailCodeRequest;
@@ -13,6 +14,9 @@ import com.seekwd.dormcheck.api.dto.ScheduleRequest;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -33,13 +37,16 @@ public class DormCheckController {
     private final AuthSecurityService authSecurity;
     private final AdminService admin;
     private final AdminAuthService adminAuth;
+    private final XiangqiService xiangqi;
 
-    public DormCheckController(DormCheckService service, SessionService sessions, AuthSecurityService authSecurity, AdminService admin, AdminAuthService adminAuth) {
+    public DormCheckController(DormCheckService service, SessionService sessions, AuthSecurityService authSecurity,
+        AdminService admin, AdminAuthService adminAuth, XiangqiService xiangqi) {
         this.service = service;
         this.sessions = sessions;
         this.authSecurity = authSecurity;
         this.admin = admin;
         this.adminAuth = adminAuth;
+        this.xiangqi = xiangqi;
     }
 
     @GetMapping("/health")
@@ -58,9 +65,10 @@ public class DormCheckController {
         return adminAuth.bootstrap(payload.token(), payload.email(), payload.name(), payload.password(), request);
     }
 
-    @PostMapping("/admin/auth/bootstrap/confirm")
-    Map<String, Object> confirmAdminBootstrap(@Valid @RequestBody AdminBootstrapConfirmRequest payload, HttpServletRequest request) {
-        return adminAuth.confirmBootstrap(payload.token(), payload.email(), payload.code(), request);
+    @PostMapping("/admin/auth/login/code")
+    Map<String, Boolean> requestAdminLoginCode(@Valid @RequestBody AdminLoginCodeRequest payload, HttpServletRequest request) {
+        adminAuth.requestLoginCode(payload.email(), payload.password(), request);
+        return Map.of("sent", true);
     }
 
     @PostMapping("/admin/auth/login")
@@ -83,13 +91,6 @@ public class DormCheckController {
         return adminAuth.createAccount(session, payload.email(), payload.name(), payload.password(), payload.role(), request);
     }
 
-    @PostMapping("/admin/accounts/totp/confirm")
-    Map<String, Object> confirmAdminAccount(@Valid @RequestBody AdminAccountTotpRequest payload, HttpServletRequest request) {
-        Map<String, Object> session = adminAuth.require(request);
-        adminAuth.requireCsrf(request, session);
-        return adminAuth.confirmAccount(session, payload.email(), payload.code(), request);
-    }
-
     @GetMapping("/admin/overview")
     Map<String, Object> adminOverview(HttpServletRequest request) { return admin.overview(request); }
 
@@ -99,7 +100,8 @@ public class DormCheckController {
 
     @GetMapping("/admin/runs")
     Map<String, Object> adminRuns(@RequestParam(defaultValue = "1") int page,
-        @RequestParam(defaultValue = "all") String status, HttpServletRequest request) { return admin.runs(request, page, status); }
+        @RequestParam(defaultValue = "all") String status, @RequestParam(defaultValue = "all") String range,
+        HttpServletRequest request) { return admin.runs(request, page, status, range); }
 
     @GetMapping("/admin/queue")
     Map<String, Object> adminQueue(HttpServletRequest request) { return admin.queue(request); }
@@ -184,6 +186,91 @@ public class DormCheckController {
         return service.academicSchedule(sessions.require(request), request, refresh);
     }
 
+    @GetMapping("/xiangqi/games")
+    java.util.List<Map<String, Object>> xiangqiGames(HttpServletRequest request) {
+        return xiangqi.list(sessions.require(request));
+    }
+
+    @GetMapping("/xiangqi/profile")
+    Map<String, Object> xiangqiProfile(HttpServletRequest request) {
+        return xiangqi.profile(sessions.require(request));
+    }
+
+    @PostMapping("/xiangqi/match")
+    Map<String, Object> startXiangqiMatch(HttpServletRequest request) {
+        return xiangqi.match(requireMutationSession(request), request);
+    }
+
+    @GetMapping("/xiangqi/match")
+    Map<String, Object> xiangqiMatchStatus(HttpServletRequest request) {
+        return xiangqi.matchStatus(sessions.require(request));
+    }
+
+    @DeleteMapping("/xiangqi/match")
+    Map<String, Object> cancelXiangqiMatch(HttpServletRequest request) {
+        return xiangqi.cancelMatch(requireMutationSession(request));
+    }
+
+    @PostMapping("/xiangqi/rewards/ad/start")
+    Map<String, Object> startXiangqiAd(HttpServletRequest request) {
+        return xiangqi.startAd(requireMutationSession(request), request);
+    }
+
+    @PostMapping("/xiangqi/rewards/ad/{sessionId}/claim")
+    Map<String, Object> claimXiangqiAd(@PathVariable String sessionId, HttpServletRequest request) {
+        return xiangqi.claimAd(sessionId, requireMutationSession(request));
+    }
+
+    @PostMapping("/xiangqi/rewards/relief")
+    Map<String, Object> claimXiangqiRelief(HttpServletRequest request) {
+        return xiangqi.claimRelief(requireMutationSession(request));
+    }
+
+    @PostMapping("/xiangqi/games")
+    Map<String, Object> createXiangqiGame(HttpServletRequest request) {
+        return xiangqi.create(requireMutationSession(request), request);
+    }
+
+    @PostMapping("/xiangqi/games/join")
+    Map<String, Object> joinXiangqiGame(@Valid @RequestBody XiangqiJoinRequest payload, HttpServletRequest request) {
+        return xiangqi.join(payload.roomCode(), requireMutationSession(request), request);
+    }
+
+    @GetMapping("/xiangqi/games/{gameId}")
+    Map<String, Object> xiangqiGame(@PathVariable String gameId, HttpServletRequest request) {
+        return xiangqi.get(gameId, sessions.require(request));
+    }
+
+    @PostMapping("/xiangqi/games/{gameId}/moves")
+    Map<String, Object> xiangqiMove(@PathVariable String gameId, @Valid @RequestBody XiangqiMoveRequest payload,
+        HttpServletRequest request) {
+        return xiangqi.move(gameId, payload.from(), payload.to(), payload.expectedVersion(),
+            requireMutationSession(request), request);
+    }
+
+    @PostMapping("/xiangqi/games/{gameId}/resign")
+    Map<String, Object> resignXiangqiGame(@PathVariable String gameId,
+        @Valid @RequestBody XiangqiVersionRequest payload, HttpServletRequest request) {
+        return xiangqi.resign(gameId, payload.expectedVersion(), requireMutationSession(request));
+    }
+
+    @PostMapping("/xiangqi/games/{gameId}/draw")
+    Map<String, Object> xiangqiDraw(@PathVariable String gameId, @Valid @RequestBody XiangqiDrawRequest payload,
+        HttpServletRequest request) {
+        return xiangqi.draw(gameId, payload.action(), payload.expectedVersion(), requireMutationSession(request));
+    }
+
+    @GetMapping("/xiangqi/games/{gameId}/messages")
+    java.util.List<Map<String, Object>> xiangqiMessages(@PathVariable String gameId, HttpServletRequest request) {
+        return xiangqi.messages(gameId, sessions.require(request));
+    }
+
+    @PostMapping("/xiangqi/games/{gameId}/messages")
+    Map<String, Object> postXiangqiMessage(@PathVariable String gameId,
+        @Valid @RequestBody XiangqiMessageRequest payload, HttpServletRequest request) {
+        return xiangqi.postMessage(gameId, payload.body(), requireMutationSession(request), request);
+    }
+
     @PutMapping("/notifications/read")
     Map<String, Object> markNotificationsRead(HttpServletRequest request) {
         return service.markNotificationsRead(requireMutationSession(request));
@@ -202,12 +289,12 @@ public class DormCheckController {
 
     @PostMapping("/auth/totp/setup")
     Map<String, String> beginTotp(HttpServletRequest request) {
-        return authSecurity.beginTotpSetup(requireMutationSession(request));
+        return authSecurity.beginTotpSetup(requireMutationSession(request), request.getRemoteAddr());
     }
 
     @PostMapping("/auth/totp/confirm")
     Map<String, Boolean> confirmTotp(@Valid @RequestBody TotpRequest payload, HttpServletRequest request) {
-        return authSecurity.confirmTotp(requireMutationSession(request), payload.code());
+        return authSecurity.confirmTotp(requireMutationSession(request), payload.code(), request.getRemoteAddr());
     }
 
     @PutMapping("/credentials")
@@ -248,18 +335,25 @@ public class DormCheckController {
         return session;
     }
 
-    public record TotpRequest(@jakarta.validation.constraints.Pattern(regexp="\\d{6}") String code) {}
-    public record AdminBootstrapRequest(@jakarta.validation.constraints.NotBlank String token,
-        @jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank String email,
-        String name, @jakarta.validation.constraints.Size(min=16, max=256) String password) {}
-    public record AdminBootstrapConfirmRequest(@jakarta.validation.constraints.NotBlank String token,
-        @jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank String email,
-        @jakarta.validation.constraints.Pattern(regexp="\\d{6}") String code) {}
-    public record AdminLoginRequest(@jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank String email,
-        @jakarta.validation.constraints.NotBlank String password, @jakarta.validation.constraints.Pattern(regexp="\\d{6}") String code) {}
-    public record AdminAccountRequest(@jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank String email,
-        String name, @jakarta.validation.constraints.Size(min=16, max=256) String password,
+    public record TotpRequest(@NotBlank @jakarta.validation.constraints.Pattern(regexp="\\d{6}") String code) {}
+    public record AdminBootstrapRequest(@NotBlank @Size(max=256) String token,
+        @Email @NotBlank @Size(max=254) String email,
+        @Size(max=80) String name, @Size(min=16, max=256) String password) {}
+    public record AdminLoginRequest(@Email @NotBlank @Size(max=254) String email,
+        @NotBlank @Size(max=256) String password, @NotBlank @jakarta.validation.constraints.Pattern(regexp="\\d{6}") String code) {}
+    public record AdminLoginCodeRequest(@Email @NotBlank @Size(max=254) String email,
+        @NotBlank @Size(max=256) String password) {}
+    public record AdminAccountRequest(@Email @NotBlank @Size(max=254) String email,
+        @Size(max=80) String name, @Size(min=16, max=256) String password,
         @jakarta.validation.constraints.Pattern(regexp="owner|operator|analyst") String role) {}
-    public record AdminAccountTotpRequest(@jakarta.validation.constraints.Email @jakarta.validation.constraints.NotBlank String email,
-        @jakarta.validation.constraints.Pattern(regexp="\\d{6}") String code) {}
+    public record XiangqiJoinRequest(@NotBlank @jakarta.validation.constraints.Pattern(regexp="[A-Za-z0-9]{6}") String roomCode) {}
+    public record XiangqiMoveRequest(
+        @NotBlank @jakarta.validation.constraints.Pattern(regexp="[a-iA-I][0-9]") String from,
+        @NotBlank @jakarta.validation.constraints.Pattern(regexp="[a-iA-I][0-9]") String to,
+        @jakarta.validation.constraints.Min(1) int expectedVersion) {}
+    public record XiangqiVersionRequest(@jakarta.validation.constraints.Min(1) int expectedVersion) {}
+    public record XiangqiDrawRequest(
+        @NotBlank @jakarta.validation.constraints.Pattern(regexp="offer|accept|decline") String action,
+        @jakarta.validation.constraints.Min(1) int expectedVersion) {}
+    public record XiangqiMessageRequest(@NotBlank @Size(max=80) String body) {}
 }

@@ -7,6 +7,7 @@ from dormcheck.engine import (
     _normalize_ticket,
     _is_safe_cas_ticket_candidate,
     _parse_notice_items,
+    _parse_academic_calendar_range,
     _parse_schedule_items,
     _portal_login_failure_message,
     _cookie_value,
@@ -214,6 +215,37 @@ def test_parse_schedule_items_normalizes_course_rows():
         "course": "高等数学", "teacher": "张老师", "room": "5-310",
         "weekday": "星期一", "periods": "1-2", "weeks": "1-16", "type": "专业课",
     }]
+
+
+def test_parse_academic_calendar_range_reads_official_semester_dates():
+    html = "<th>2026-2027学年1学期(2026-08-31至2027-01-29)</th>"
+    assert _parse_academic_calendar_range(html) == ("2026-08-31", "2027-01-29")
+
+
+def test_parse_academic_calendar_range_rejects_missing_or_invalid_dates():
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        _parse_academic_calendar_range("<th>学期信息暂不可用</th>")
+    with pytest.raises(ValueError):
+        _parse_academic_calendar_range("<th>2026-2027学年(2026-02-30至2027-01-29)</th>")
+
+
+def test_parsers_accept_explicit_empty_payloads_only():
+    assert _parse_notice_items({"data": {"contentDisplay": {"data": []}}}) == []
+    assert _parse_schedule_items({"kbList": []}) == []
+
+
+def test_schedule_parser_accepts_chinese_weekday_names():
+    items = _parse_schedule_items({"kbList": [{"kcmc": "数据结构", "xqjmc": "星期三", "jcs": "3-4"}]})
+    assert items[0]["weekday"] == "星期三"
+
+
+def test_schedule_parser_rejects_partial_course_rows():
+    import pytest
+
+    with pytest.raises(RuntimeError):
+        _parse_schedule_items({"kbList": [{"kcmc": "数据结构", "xqjmc": "星期二"}]})
 
 
 def test_portal_login_failure_messages_only_expose_safe_categories():

@@ -61,40 +61,45 @@ public class AdminService {
         requireAdmin(request, "admin.users");
         int safePage = Math.max(1, Math.min(page, 100_000));
         String term = query == null ? "" : query.trim().toLowerCase(java.util.Locale.ROOT);
+        if (term.length() > 120) throw new ApiException(HttpStatus.BAD_REQUEST, "search query is too long");
+        String escapedTerm = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
         int size = 25;
         List<Map<String, Object>> rows = jdbc.query("SELECT u.id,u.email,u.display_name,u.created_at, " +
-            "c.user_id IS NOT NULL configured,c.verified_at,s.enabled schedule_enabled, " +
+            "c.user_id IS NOT NULL configured,c.account_hint,c.verified_at,s.enabled schedule_enabled, " +
             "(SELECT r.status FROM runs r WHERE r.user_id=u.id ORDER BY r.started_at DESC LIMIT 1) last_status, " +
             "(SELECT r.started_at FROM runs r WHERE r.user_id=u.id ORDER BY r.started_at DESC LIMIT 1) last_run " +
             "FROM users u LEFT JOIN credentials c ON c.user_id=u.id LEFT JOIN schedules s ON s.user_id=u.id " +
-            "WHERE (?='' OR lower(u.email) LIKE ? OR lower(u.display_name) LIKE ?) " +
+            "WHERE (?='' OR lower(u.email) LIKE ? ESCAPE '\\' OR lower(u.display_name) LIKE ? ESCAPE '\\') " +
             "ORDER BY u.created_at DESC LIMIT ? OFFSET ?", (rs, row) -> {
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("id", rs.getString("id")); item.put("email", maskEmail(rs.getString("email")));
                 item.put("name", rs.getString("display_name")); item.put("registered_at", rs.getString("created_at"));
+                item.put("credential_hint", maskAccountHint(rs.getString("account_hint")));
                 item.put("credential_configured", rs.getBoolean("configured")); item.put("credential_verified", rs.getString("verified_at") != null);
                 item.put("schedule_enabled", rs.getBoolean("schedule_enabled")); item.put("last_run_status", rs.getString("last_status"));
                 item.put("last_run_at", rs.getString("last_run"));
                 return item;
-            }, term, "%" + term + "%", "%" + term + "%", size, (safePage - 1) * size);
-        long total = jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE (?='' OR lower(email) LIKE ? OR lower(display_name) LIKE ?)",
-            Long.class, term, "%" + term + "%", "%" + term + "%");
+            }, term, "%" + escapedTerm + "%", "%" + escapedTerm + "%", size, (safePage - 1) * size);
+        long total = jdbc.queryForObject("SELECT COUNT(*) FROM users WHERE (?='' OR lower(email) LIKE ? ESCAPE '\\' OR lower(display_name) LIKE ? ESCAPE '\\')",
+            Long.class, term, "%" + escapedTerm + "%", "%" + escapedTerm + "%");
         return Map.of("items", rows, "page", safePage, "page_size", size, "total", total);
     }
 
-    public Map<String, Object> runs(HttpServletRequest request, int page, String status) {
+    public Map<String, Object> runs(HttpServletRequest request, int page, String status, String range) {
         requireAdmin(request, "admin.runs");
         if (!List.of("all", "success", "failure").contains(status)) throw new ApiException(HttpStatus.BAD_REQUEST, "invalid status filter");
+        if (!List.of("all", "7d", "30d").contains(range)) throw new ApiException(HttpStatus.BAD_REQUEST, "invalid time range");
         int safePage = Math.max(1, Math.min(page, 100_000));
         int size = 25;
+        String since = "all".equals(range) ? "" : java.time.Instant.now().minusSeconds("7d".equals(range) ? 7 * 86_400L : 30 * 86_400L).toString();
         List<Map<String, Object>> rows = jdbc.query("SELECT r.id,u.email,u.display_name,r.status,r.message,r.started_at,r.duration_ms " +
-            "FROM runs r JOIN users u ON u.id=r.user_id WHERE (?='all' OR r.status=?) " +
+            "FROM runs r JOIN users u ON u.id=r.user_id WHERE (?='all' OR r.status=?) AND (?='' OR r.started_at>=?) " +
             "ORDER BY r.started_at DESC,r.id DESC LIMIT ? OFFSET ?", (rs, row) -> Map.of(
                 "id", rs.getString("id"), "email", maskEmail(rs.getString("email")), "name", rs.getString("display_name"),
                 "status", rs.getString("status"), "message", safeMessage(rs.getString("message")),
-                "time", rs.getString("started_at"), "duration_ms", rs.getInt("duration_ms")), status, status, size, (safePage - 1) * size);
-        long total = jdbc.queryForObject("SELECT COUNT(*) FROM runs WHERE (?='all' OR status=?)", Long.class, status, status);
-        return Map.of("items", rows, "page", safePage, "page_size", size, "total", total);
+                "time", rs.getString("started_at"), "duration_ms", rs.getInt("duration_ms")), status, status, since, since, size, (safePage - 1) * size);
+        long total = jdbc.queryForObject("SELECT COUNT(*) FROM runs WHERE (?='all' OR status=?) AND (?='' OR started_at>=?)", Long.class, status, status, since, since);
+        return Map.of("items", rows, "page", safePage, "page_size", size, "total", total, "range", range);
     }
 
     public Map<String, Object> queue(HttpServletRequest request) {
@@ -161,6 +166,13 @@ public class AdminService {
         Map<String, Object> result = new LinkedHashMap<>(); source.forEach((key, value) -> result.put(key, value == null ? 0 : value)); return result;
     }
     private static String valueOrEmpty(String value) { return value == null ? "" : value; }
+    private static String maskAccountHint(String hint) {
+        if (hint == null || hint.isBlank()) return "";
+        if (hint.contains("***")) return hint;
+        if (hint.length() <= 4) return "***" + hint.substring(Math.max(0, hint.length() - 2));
+        if (hint.length() <= 6) return hint.substring(0, 1) + "***" + hint.substring(hint.length() - 2);
+        return hint.substring(0, 3) + "***" + hint.substring(hint.length() - 3);
+    }
     private static String maskEmail(String email) {
         if (email == null) return "";
         int at = email.indexOf('@'); if (at < 1) return "***";

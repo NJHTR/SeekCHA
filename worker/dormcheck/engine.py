@@ -9,6 +9,7 @@ import re
 import time
 import threading
 from datetime import datetime
+from html.parser import HTMLParser
 from pathlib import Path
 from types import CodeType
 from typing import Any
@@ -263,13 +264,15 @@ def _parse_notice_items(payload: Any) -> list[dict[str, str]]:
                 # The portal returns card metadata in `contentDisplay` and the
                 # actual rows in its sibling `data` field.
                 raw = value.get("data")
-                if raw is content:
+                if raw is content or raw is None:
                     raw = content.get("data")
                 if isinstance(raw, str):
                     try:
                         raw = json.loads(raw)
                     except (TypeError, ValueError):
                         raw = None
+                if isinstance(raw, list) and not raw:
+                    return raw
                 if looks_like_notice_rows(raw):
                     return raw
                 nested = find_rows(raw)
@@ -304,7 +307,7 @@ def _parse_notice_items(payload: Any) -> list[dict[str, str]]:
         date = row.get("CJSJ")
         link = row.get("URL")
         if not all(isinstance(value, str) and value.strip() for value in (title, date, link)):
-            continue
+            raise RuntimeError("portal notice row incomplete")
         parsed = urlparse(link)
         if parsed.scheme != "https" or parsed.hostname != "jw.gzist.edu.cn":
             continue
@@ -352,9 +355,8 @@ def _parse_schedule_items(payload: Any) -> list[dict[str, str]]:
 
     def find_rows(value: Any) -> list[dict[str, Any]] | None:
         if isinstance(value, dict) and isinstance(value.get("kbList"), list):
-            rows = [row for row in value["kbList"] if is_course_row(row)]
-            if rows:
-                return rows
+            rows = [row for row in value["kbList"] if isinstance(row, dict)]
+            return rows
         if isinstance(value, list):
             rows = [row for row in value if isinstance(row, dict)]
             if rows and any(is_course_row(row) for row in rows):
@@ -375,21 +377,60 @@ def _parse_schedule_items(payload: Any) -> list[dict[str, str]]:
         raise RuntimeError("portal schedule response invalid")
     result = []
     for row in rows:
-        if not is_course_row(row):
+        if not isinstance(row, dict) or not value_for(row, aliases["course"]):
             continue
         course = value_for(row, aliases["course"])
-        if not course:
-            continue
+        weekday = value_for(row, aliases["weekday"])
+        periods = value_for(row, aliases["periods"])
+        day_match = re.search(r"[1-7]", weekday)
+        day_number = int(day_match.group()) if day_match else None
+        if not day_match:
+            day_names = {"一": "1", "二": "2", "三": "3", "四": "4", "五": "5", "六": "6", "日": "7", "天": "7"}
+            day_match = re.search(r"[一二三四五六日天]", weekday)
+            if day_match:
+                day_number = int(day_names[day_match.group()])
+        period_values = [int(value) for value in re.findall(r"\d+", periods)]
+        if day_number is None or not period_values or not 1 <= day_number <= 7:
+            raise RuntimeError("portal schedule row incomplete")
+        start, end = period_values[0], period_values[-1]
+        if not (1 <= start <= end <= 11):
+            raise RuntimeError("portal schedule periods invalid")
         result.append({
             "course": course,
             "teacher": value_for(row, aliases["teacher"]),
             "room": value_for(row, aliases["room"]),
-            "weekday": value_for(row, aliases["weekday"]),
-            "periods": value_for(row, aliases["periods"]),
+            "weekday": weekday,
+            "periods": periods,
             "weeks": value_for(row, aliases["weeks"]),
             "type": value_for(row, aliases["type"]),
         })
-    return result[:200]
+    if len(result) > 200:
+        raise RuntimeError("portal schedule row limit exceeded")
+    return result
+
+
+def _parse_academic_calendar_range(source: str) -> tuple[str, str]:
+    """Read the official semester date range from the academic calendar HTML."""
+    class TextExtractor(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__(convert_charrefs=True)
+            self.parts: list[str] = []
+
+        def handle_data(self, data: str) -> None:
+            self.parts.append(data)
+
+    parser = TextExtractor()
+    parser.feed(source)
+    text = " ".join(parser.parts)
+    match = re.search(r"(20\d{2}-\d{2}-\d{2})\s*至\s*(20\d{2}-\d{2}-\d{2})", text)
+    if not match:
+        raise RuntimeError("academic calendar date range missing")
+    start, end = match.groups()
+    start_date = datetime.strptime(start, "%Y-%m-%d").date()
+    end_date = datetime.strptime(end, "%Y-%m-%d").date()
+    if start_date > end_date or (end_date - start_date).days > 240:
+        raise RuntimeError("academic calendar date range invalid")
+    return start, end
 
 
 def _safe_shape(value: Any, depth: int = 0) -> Any:
@@ -793,7 +834,7 @@ def fetch_portal_notices(path: Path, account: str, password: str) -> tuple[bool,
         diagnostic.append(f"elapsed_ms_{round((time.monotonic() - started) * 1000)}")
 
 
-def fetch_portal_schedule(path: Path, account: str, password: str) -> tuple[bool, list[dict[str, str]], str, list[str]]:
+def fetch_portal_schedule(path: Path, account: str, password: str) -> tuple[bool, list[dict[str, str]], str, list[str], str | None, str | None]:
     """Fetch the timetable through the authenticated ZF academic system."""
     started = time.monotonic()
     diagnostic = ["start"]
@@ -817,7 +858,7 @@ def fetch_portal_schedule(path: Path, account: str, password: str) -> tuple[bool
             )
             if menu.status_code != 200 or "/login" in (urlparse(menu.url).path or ""):
                 diagnostic.append(f"jw_menu=http_{menu.status_code}")
-                return False, [], "教务系统登录未完成，请稍后重试。", diagnostic
+                return False, [], "教务系统登录未完成，请稍后重试。", diagnostic, None, None
 
             now = datetime.now(ZoneInfo("Asia/Shanghai"))
             year = now.year if now.month >= 8 else now.year - 1
@@ -846,27 +887,55 @@ def fetch_portal_schedule(path: Path, account: str, password: str) -> tuple[bool
             )
             if response.status_code != 200:
                 diagnostic.append(f"schedule=http_{response.status_code}")
-                return False, [], "无法获取我的课表，请稍后重试。", diagnostic
+                return False, [], "无法获取我的课表，请稍后重试。", diagnostic, None, None
             try:
                 payload = response.json()
                 items = _parse_schedule_items(payload)
             except ValueError:
                 diagnostic.append(f"schedule=invalid_json_http_{response.status_code}_len_{len(response.text)}")
-                return False, [], "课表返回格式异常，请稍后重试。", diagnostic
+                return False, [], "课表返回格式异常，请稍后重试。", diagnostic, None, None
             except RuntimeError:
                 diagnostic.append(
                     f"schedule=invalid_shape_http_{response.status_code}_"
                     f"shape_{json.dumps(_safe_shape(payload), ensure_ascii=False, separators=(',', ':'))[:500]}"
                 )
-                return False, [], "课表返回格式异常，请稍后重试。", diagnostic
+                return False, [], "课表返回格式异常，请稍后重试。", diagnostic, None, None
+
+            semester_start = None
+            semester_end = None
+            try:
+                calendar = _safe_campus_request(
+                    session,
+                    "POST",
+                    f"http://{ACADEMIC_HOST}/jwglxt/xtgl/index_cxAreaFive.html",
+                    params={"localeKey": "zh_CN", "gnmkdm": "index"},
+                    data=b"",
+                    headers={
+                        "Accept": "text/html, */*; q=0.01",
+                        "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+                        "Origin": f"http://{ACADEMIC_HOST}",
+                        "Referer": f"http://{ACADEMIC_HOST}/jwglxt/xtgl/index_initMenu.html?jsdm=xs&echarts=1",
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                    timeout=20,
+                )
+                if calendar.status_code == 200:
+                    semester_start, semester_end = _parse_academic_calendar_range(calendar.text)
+                    diagnostic.append("calendar=ok")
+                else:
+                    diagnostic.append(f"calendar=http_{calendar.status_code}")
+            except (RuntimeError, ValueError):
+                diagnostic.append("calendar=date_range_unavailable")
+            except Exception as error:
+                diagnostic.append(f"calendar=exception_{type(error).__name__}")
             diagnostic.append(f"schedule=ok_count_{len(items)}")
-            return True, items, "", diagnostic
+            return True, items, "", diagnostic, semester_start, semester_end
     except RuntimeError as error:
         diagnostic.append(f"schedule=auth_failed_reason_{type(error).__name__}")
-        return False, [], str(error), diagnostic
+        return False, [], str(error), diagnostic, None, None
     except Exception as error:
         diagnostic.append(f"schedule=exception_{type(error).__name__}")
-        return False, [], "我的课表获取失败，请检查校园账号或稍后重试。", diagnostic
+        return False, [], "我的课表获取失败，请检查校园账号或稍后重试。", diagnostic, None, None
     finally:
         # Keep diagnostics useful without including credentials or response bodies.
         pass

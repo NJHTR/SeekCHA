@@ -61,6 +61,7 @@ class DormCheckApiTest {
     @Autowired DormCheckService dormCheckService;
     @Autowired com.seekwd.dormcheck.service.CheckQueueService checkQueue;
     @Autowired com.seekwd.dormcheck.service.CampusAccessGuard campusAccess;
+    @Autowired com.seekwd.dormcheck.service.XiangqiService xiangqiService;
     @MockitoBean CheckEngine engine;
     @MockitoBean JavaMailSender mail;
 
@@ -73,6 +74,13 @@ class DormCheckApiTest {
 
     @BeforeEach
     void clearDatabase() {
+        jdbc.update("DELETE FROM xiangqi_match_queue");
+        jdbc.update("DELETE FROM xiangqi_messages");
+        jdbc.update("DELETE FROM xiangqi_ad_sessions");
+        jdbc.update("DELETE FROM xiangqi_game_entries");
+        jdbc.update("DELETE FROM xiangqi_ledger");
+        jdbc.update("DELETE FROM xiangqi_wallets");
+        jdbc.update("DELETE FROM xiangqi_games");
         jdbc.update("DELETE FROM check_jobs");
         jdbc.update("UPDATE check_queue_state SET not_before=0,lease_until=0,lease_token=NULL,cooldown_until=0,transient_failures=0 WHERE id=1");
         jdbc.update("DELETE FROM rate_limits");
@@ -91,8 +99,9 @@ class DormCheckApiTest {
 
     @Test
     void academicReadsUseCacheAndControlledRefresh() throws Exception {
+        Map<String, Object> notice = Map.of("title", "公告", "date", "2026-10-11", "url", "/notice");
         when(engine.notices(anyString(), anyString())).thenReturn(
-            Map.of("ok", true, "items", java.util.List.of(Map.of("title", "公告", "date", "2026-10-11", "url", "/notice"))));
+            Map.of("ok", true, "items", java.util.List.of(notice), "data_complete", true));
         MvcResult registered = register("academic-cache@qq.com");
         Cookie cookie = registered.getResponse().getCookie(SessionService.COOKIE_NAME);
         mvc.perform(put("/api/credentials").cookie(cookie).header("Origin", "http://localhost")
@@ -110,10 +119,209 @@ class DormCheckApiTest {
         // Reset the durable lease as well so this test can exercise refresh
         // without waiting for the production interval.
         jdbc.update("UPDATE check_queue_state SET not_before=0,lease_until=0,lease_token=NULL,cooldown_until=0 WHERE id=1");
+        when(engine.notices(anyString(), anyString())).thenReturn(Map.of("ok", true, "items", java.util.List.of(), "data_complete", true));
         mvc.perform(get("/api/academic/notices?refresh=true").cookie(cookie))
-            .andExpect(status().isOk());
+            .andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(0));
         verify(engine, times(2)).notices(anyString(), anyString());
+
+        jdbc.update("UPDATE academic_cache SET fresh_until=0 WHERE cache_type='notices'");
+        when(engine.notices(anyString(), anyString())).thenReturn(Map.of("ok", true, "items", java.util.List.of(notice)));
+        jdbc.update("UPDATE check_queue_state SET not_before=0,lease_until=0,lease_token=NULL,cooldown_until=0 WHERE id=1");
+        mvc.perform(get("/api/academic/notices?refresh=true").cookie(cookie))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.items.length()").value(0))
+            .andExpect(jsonPath("$.cache_status").value("stale-fallback"));
+        verify(engine, times(3)).notices(anyString(), anyString());
         org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM academic_cache", Integer.class)).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT payload FROM academic_cache", String.class)).contains("\"items\":[]");
+    }
+
+    @Test
+    void xiangqiSupportsOnlineRoomsAndServerValidatedMoves() throws Exception {
+        MvcResult host = register("xiangqi-host@qq.com");
+        Cookie hostCookie = host.getResponse().getCookie(SessionService.COOKIE_NAME);
+        String hostCsrf = json(host).get("csrf_token").asText();
+        MvcResult created = mvc.perform(post("/api/xiangqi/games").cookie(hostCookie)
+                .header("Origin", "http://localhost").header("Host", "localhost")
+                .header("X-CSRF-Token", hostCsrf))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("waiting"))
+            .andExpect(jsonPath("$.my_color").value("red"))
+            .andReturn();
+        String gameId = json(created).get("id").asText();
+        String roomCode = json(created).get("room_code").asText();
+        org.assertj.core.api.Assertions.assertThat(json(created).get("clock").get("red_ms").asLong()).isEqualTo(90_000);
+        org.assertj.core.api.Assertions.assertThat(json(created).get("clock").get("increment_ms").asLong()).isZero();
+        String hostId = json(host).get("user").get("id").asText();
+
+        MvcResult guest = register("xiangqi-guest@qq.com");
+        String guestId = json(guest).get("user").get("id").asText();
+        Cookie guestCookie = guest.getResponse().getCookie(SessionService.COOKIE_NAME);
+        String guestCsrf = json(guest).get("csrf_token").asText();
+        MvcResult joined = mvc.perform(post("/api/xiangqi/games/join").cookie(guestCookie)
+                .header("Origin", "http://localhost").header("Host", "localhost")
+                .header("X-CSRF-Token", guestCsrf).contentType("application/json")
+                .content("{\"roomCode\":\"" + roomCode + "\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("active"))
+            .andExpect(jsonPath("$.my_color").value("black"))
+            .andExpect(jsonPath("$.my_turn").value(false))
+            .andExpect(jsonPath("$.clock.black_ms").value(90000))
+            .andExpect(jsonPath("$.game_type").value("friend"))
+            .andReturn();
+        mvc.perform(get("/api/xiangqi/profile").cookie(hostCookie)).andExpect(status().isOk());
+        mvc.perform(get("/api/xiangqi/profile").cookie(guestCookie)).andExpect(status().isOk());
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT coins FROM xiangqi_wallets WHERE user_id=?", Integer.class, hostId)).isEqualTo(10000);
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT coins FROM xiangqi_wallets WHERE user_id=?", Integer.class, guestId)).isEqualTo(10000);
+
+        mvc.perform(get("/api/xiangqi/match").cookie(hostCookie))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("matched"))
+            .andExpect(jsonPath("$.game.id").value(gameId));
+
+        MvcResult hostView = mvc.perform(get("/api/xiangqi/games/" + gameId).cookie(hostCookie))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.my_turn").value(true))
+            .andExpect(jsonPath("$.legal_moves.a3[0]").value("a4"))
+            .andExpect(jsonPath("$.legal_moves.b2").isArray())
+            .andReturn();
+        JsonNode legalMoves = json(hostView).get("legal_moves");
+        int legalMoveCount = 0;
+        for (var targets : legalMoves) legalMoveCount += targets.size();
+        org.assertj.core.api.Assertions.assertThat(legalMoveCount).isEqualTo(44);
+        org.assertj.core.api.Assertions.assertThat(legalMoves.get("b2").size()).isEqualTo(12);
+        org.assertj.core.api.Assertions.assertThat(legalMoves.get("c0").toString()).contains("a2", "e2");
+        org.assertj.core.api.Assertions.assertThat(legalMoves.get("g0").toString()).contains("e2", "i2");
+
+        mvc.perform(post("/api/xiangqi/games/" + gameId + "/moves").cookie(hostCookie)
+                .header("Origin", "http://localhost").header("Host", "localhost")
+                .header("X-CSRF-Token", hostCsrf).contentType("application/json")
+                .content("{\"from\":\"b0\",\"to\":\"d1\",\"expectedVersion\":2}"))
+            .andExpect(status().isUnprocessableEntity());
+
+        MvcResult firstMove = mvc.perform(post("/api/xiangqi/games/" + gameId + "/moves").cookie(hostCookie)
+                .header("Origin", "http://localhost").header("Host", "localhost")
+                .header("X-CSRF-Token", hostCsrf).contentType("application/json")
+                .content("{\"from\":\"a3\",\"to\":\"a4\",\"expectedVersion\":2}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.turn").value("black"))
+            .andExpect(jsonPath("$.clock.increment_ms").value(0))
+            .andExpect(jsonPath("$.moves[0].piece").value("rP"))
+            .andReturn();
+        org.assertj.core.api.Assertions.assertThat(json(firstMove).get("version").asInt()).isEqualTo(3);
+
+        mvc.perform(post("/api/xiangqi/games/" + gameId + "/moves").cookie(guestCookie)
+                .header("Origin", "http://localhost").header("Host", "localhost")
+                .header("X-CSRF-Token", guestCsrf).contentType("application/json")
+                .content("{\"from\":\"a6\",\"to\":\"a5\",\"expectedVersion\":3}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.turn").value("red"));
+
+        mvc.perform(post("/api/xiangqi/games/" + gameId + "/moves").cookie(guestCookie)
+                .header("Origin", "http://localhost").header("Host", "localhost")
+                .header("X-CSRF-Token", guestCsrf).contentType("application/json")
+                .content("{\"from\":\"b0\",\"to\":\"c2\",\"expectedVersion\":4}"))
+            .andExpect(status().isConflict());
+
+        mvc.perform(post("/api/xiangqi/games/" + gameId + "/resign").cookie(hostCookie)
+                .header("Origin", "http://localhost").header("Host", "localhost")
+                .header("X-CSRF-Token", hostCsrf).contentType("application/json")
+                .content("{\"expectedVersion\":4}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("finished"))
+            .andExpect(jsonPath("$.winner_color").value("black"))
+            .andExpect(jsonPath("$.finish_reason").value("resignation"));
+    }
+
+    @Test
+    void xiangqiAdClaimUsesUserBoundTemporaryPathAndRejectsEarlyClaims() throws Exception {
+        MvcResult registered = register("xiangqi-ad@qq.com");
+        Cookie cookie = registered.getResponse().getCookie(SessionService.COOKIE_NAME);
+        String csrf = json(registered).get("csrf_token").asText();
+        MvcResult started = mvc.perform(post("/api/xiangqi/rewards/ad/start").cookie(cookie)
+                .header("Origin", "http://localhost").header("Host", "localhost")
+                .header("X-CSRF-Token", csrf))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.claim_path").exists())
+            .andExpect(jsonPath("$.mode").value("demo")).andReturn();
+        String claimPath = json(started).get("claim_path").asText();
+        org.assertj.core.api.Assertions.assertThat(claimPath).matches("/xiangqi/rewards/ad/[0-9a-f-]{36}/claim");
+
+        mvc.perform(post("/api" + claimPath).cookie(cookie)
+                .header("Origin", "http://localhost").header("Host", "localhost")
+                .header("X-CSRF-Token", csrf))
+            .andExpect(status().isConflict());
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+            "SELECT coins FROM xiangqi_wallets WHERE user_id=(SELECT id FROM users WHERE email=?)", Integer.class, "xiangqi-ad@qq.com"))
+            .isEqualTo(10000);
+    }
+
+    @Test
+    void xiangqiClockIsServerAuthoritativeAndSettlesTimeoutOnce() throws Exception {
+        MvcResult host = register("xiangqi-clock-host@qq.com");
+        Cookie hostCookie = host.getResponse().getCookie(SessionService.COOKIE_NAME);
+        String hostCsrf = json(host).get("csrf_token").asText();
+        MvcResult room = mvc.perform(post("/api/xiangqi/games").cookie(hostCookie)
+                .header("Origin", "http://localhost").header("Host", "localhost")
+                .header("X-CSRF-Token", hostCsrf))
+            .andExpect(status().isOk()).andReturn();
+        String gameId = json(room).get("id").asText();
+        String roomCode = json(room).get("room_code").asText();
+
+        MvcResult guest = register("xiangqi-clock-guest@qq.com");
+        Cookie guestCookie = guest.getResponse().getCookie(SessionService.COOKIE_NAME);
+        String guestCsrf = json(guest).get("csrf_token").asText();
+        mvc.perform(post("/api/xiangqi/games/join").cookie(guestCookie)
+                .header("Origin", "http://localhost").header("Host", "localhost")
+                .header("X-CSRF-Token", guestCsrf).contentType("application/json")
+                .content("{\"roomCode\":\"" + roomCode + "\"}"))
+            .andExpect(status().isOk());
+
+        jdbc.update("UPDATE xiangqi_games SET turn_started_at=? WHERE id=?",
+            java.time.Instant.now().minusSeconds(91).toString(), gameId);
+        mvc.perform(get("/api/xiangqi/games/" + gameId).cookie(hostCookie))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("finished"))
+            .andExpect(jsonPath("$.finish_reason").value("timeout"))
+            .andExpect(jsonPath("$.winner_color").value("black"));
+
+        mvc.perform(get("/api/xiangqi/games/" + gameId).cookie(hostCookie)).andExpect(status().isOk());
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+            "SELECT coins FROM xiangqi_wallets WHERE user_id=(SELECT id FROM users WHERE email=?)", Integer.class, "xiangqi-clock-host@qq.com"))
+            .isEqualTo(10000);
+    }
+
+    @Test
+    void xiangqiRankedGamesChargeAndUseEloForRating() throws Exception {
+        MvcResult first = register("xiangqi-ranked-a@qq.com");
+        MvcResult second = register("xiangqi-ranked-b@qq.com");
+        String red = json(first).get("user").get("id").asText();
+        String black = json(second).get("user").get("id").asText();
+        Cookie redCookie = first.getResponse().getCookie(SessionService.COOKIE_NAME);
+        String redCsrf = json(first).get("csrf_token").asText();
+        Cookie blackCookie = second.getResponse().getCookie(SessionService.COOKIE_NAME);
+        String blackCsrf = json(second).get("csrf_token").asText();
+        mvc.perform(get("/api/xiangqi/profile").cookie(redCookie)).andExpect(status().isOk());
+        mvc.perform(get("/api/xiangqi/profile").cookie(blackCookie)).andExpect(status().isOk());
+        mvc.perform(post("/api/xiangqi/match").cookie(redCookie)
+                .header("Origin", "http://localhost").header("Host", "localhost").header("X-CSRF-Token", redCsrf))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("searching"));
+        MvcResult matched = mvc.perform(post("/api/xiangqi/match").cookie(blackCookie)
+                .header("Origin", "http://localhost").header("Host", "localhost").header("X-CSRF-Token", blackCsrf))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("matched"))
+            .andExpect(jsonPath("$.game.game_type").value("ranked")).andReturn();
+        String gameId = json(matched).get("game").get("id").asText();
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM xiangqi_game_entries WHERE game_id=?", Integer.class, gameId)).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT coins FROM xiangqi_wallets WHERE user_id=?", Integer.class, red)).isEqualTo(7500);
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT coins FROM xiangqi_wallets WHERE user_id=?", Integer.class, black)).isEqualTo(7500);
+        boolean secondIsRed = "red".equals(json(matched).get("game").get("my_color").asText());
+        String redUser = secondIsRed ? black : red;
+        String blackUser = secondIsRed ? red : black;
+        String resignCookie = secondIsRed ? redCookie.getValue() : blackCookie.getValue();
+        String resignCsrf = secondIsRed ? redCsrf : blackCsrf;
+        int version = json(matched).get("game").get("version").asInt();
+        mvc.perform(post("/api/xiangqi/games/" + gameId + "/resign").cookie(new Cookie(SessionService.COOKIE_NAME, resignCookie))
+                .header("Origin", "http://localhost").header("Host", "localhost").header("X-CSRF-Token", resignCsrf)
+                .contentType("application/json").content("{\"expectedVersion\":" + version + "}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("finished"));
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT rating FROM xiangqi_wallets WHERE user_id=?", Integer.class, redUser)).isEqualTo(1020);
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT rating FROM xiangqi_wallets WHERE user_id=?", Integer.class, blackUser)).isEqualTo(980);
     }
 
     @Test
@@ -281,6 +489,62 @@ class DormCheckApiTest {
                 .contentType("application/json").content("{\"email\":\"valid@qq.com\"}"))
             .andExpect(status().isOk()).andExpect(jsonPath("$.sent").value(true));
         org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM email_codes WHERE email='valid@qq.com'", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void registrationCodeHasDistributedGlobalBudget() throws Exception {
+        String[] domains = {"qq.com", "163.com", "126.com", "gmail.com", "outlook.com", "hotmail.com", "foxmail.com", "yeah.net", "icloud.com", "aliyun.com"};
+        for (int index = 0; index < domains.length; index++) {
+            mvc.perform(post("/api/auth/register-code").header("Origin", "http://localhost").header("Host", "localhost")
+                    .contentType("application/json").content("{\"email\":\"spray-" + index + "@" + domains[index] + "\"}"))
+                .andExpect(status().isOk());
+        }
+        mvc.perform(post("/api/auth/register-code").header("Origin", "http://localhost").header("Host", "localhost")
+                .contentType("application/json").content("{\"email\":\"spray-final@qq.com\"}"))
+            .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void loginCodesHaveDistributedGlobalBudget() throws Exception {
+        var digest = security.passwordDigest("login code spray test password");
+        for (int index = 0; index < 20; index++) {
+            String email = "login-spray-" + index + "@gmail.com";
+            jdbc.update("INSERT INTO users(id,email,display_name,password_salt,password_hash,created_at) VALUES(?,?,?,?,?,?)",
+                java.util.UUID.randomUUID().toString(), email, "Test", digest.salt(), digest.hash(), security.now());
+            String ip = "198.51.100." + (index + 1);
+            mvc.perform(post("/api/auth/login").header("Origin", "http://localhost").header("Host", "localhost")
+                    .with(request -> { request.setRemoteAddr(ip); return request; })
+                    .contentType("application/json").content("{\"email\":\"" + email + "\",\"password\":\"login code spray test password\"}"))
+                .andExpect(status().isOk());
+        }
+        jdbc.update("INSERT INTO users(id,email,display_name,password_salt,password_hash,created_at) VALUES(?,?,?,?,?,?)",
+            java.util.UUID.randomUUID().toString(), "login-spray-final@gmail.com", "Test", digest.salt(), digest.hash(), security.now());
+        mvc.perform(post("/api/auth/login").header("Origin", "http://localhost").header("Host", "localhost")
+                .contentType("application/json").content("{\"email\":\"login-spray-final@gmail.com\",\"password\":\"login code spray test password\"}"))
+            .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void duplicateSessionCookiesAreRejectedAndTotpCannotBeSilentlyReset() throws Exception {
+        MvcResult registered = register("secure-session@qq.com");
+        Cookie cookie = registered.getResponse().getCookie(SessionService.COOKIE_NAME);
+        String csrf = json(registered).get("csrf_token").asText();
+        mvc.perform(get("/api/auth/session").cookie(cookie, new Cookie(SessionService.COOKIE_NAME, "attacker-value")))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.authenticated").value(false));
+
+        String setup = mvc.perform(post("/api/auth/totp/setup").cookie(cookie).header("Origin", "http://localhost")
+                .header("Host", "localhost").header("X-CSRF-Token", csrf))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String secret = mapper.readTree(setup).get("secret").asText();
+        mvc.perform(post("/api/auth/totp/confirm").cookie(cookie).header("Origin", "http://localhost")
+                .header("Host", "localhost").header("X-CSRF-Token", csrf).contentType("application/json")
+                .content("{\"code\":\"" + totp(secret) + "\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.enabled").value(true));
+        mvc.perform(post("/api/auth/totp/setup").cookie(cookie).header("Origin", "http://localhost")
+                .header("Host", "localhost").header("X-CSRF-Token", csrf))
+            .andExpect(status().isConflict());
+        org.assertj.core.api.Assertions.assertThat(jdbc.queryForObject(
+            "SELECT enabled FROM user_totp WHERE user_id=?", Integer.class, json(registered).at("/user/id").asText())).isEqualTo(1);
     }
 
     @Test
@@ -529,6 +793,21 @@ class DormCheckApiTest {
         mvc.perform(post("/api/auth/login").header("Origin", "http://localhost").header("Host", "localhost")
                 .contentType("application/json").content("{\"email\":\"throttle@qq.com\",\"password\":\"incorrect password 123\"}"))
             .andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void malformedAndOversizedAuthenticationInputsReturnGenericValidationErrors() throws Exception {
+        mvc.perform(post("/api/auth/register-code").header("Origin", "http://localhost").header("Host", "localhost")
+                .contentType("application/json").content("{\"email\":\"x' OR 1=1 --@qq.com\"}"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("request validation failed"));
+        mvc.perform(post("/api/auth/register-code").header("Origin", "http://localhost").header("Host", "localhost")
+                .contentType("application/json").content("{\"email\":\"" + "a".repeat(250) + "@qq.com\"}"))
+            .andExpect(status().isUnprocessableEntity())
+            .andExpect(jsonPath("$.detail").value("request validation failed"));
+        mvc.perform(put("/api/credentials").header("Origin", "http://localhost").header("Host", "localhost")
+                .contentType("application/json").content("{\"account\":\"' OR 1=1 --\",\"password\":\"test-password\"}"))
+            .andExpect(status().isUnauthorized());
     }
 
     @Test

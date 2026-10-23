@@ -30,6 +30,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -336,7 +337,7 @@ public class DormCheckServiceImpl implements DormCheckService {
         }
         String credentialVersion = summary.updatedAt == null ? "" : summary.updatedAt;
         if (forceRefresh) limiter.check("academic-schedule-refresh", request.getRemoteAddr(), userId, 3, 600);
-        String academicScope = currentAcademicScope();
+        String academicScope = currentAcademicScope() + "-calendar-v1";
         try {
             Map<String, Object> result = academicCache.get(userId, "schedule", credentialVersion, academicScope, forceRefresh, () -> {
                 limiter.check("academic-schedule-v2", request.getRemoteAddr(), userId, 12, 3600);
@@ -348,9 +349,14 @@ public class DormCheckServiceImpl implements DormCheckService {
                 }
                 Object items = upstream.get("items");
                 if (!(items instanceof List<?>)) items = List.of();
-                return Map.of("items", items, "fetched_at", security.now(),
-                    "data_complete", Boolean.TRUE.equals(upstream.get("data_complete")),
-                    "academic_scope", academicScope);
+                Map<String, Object> response = new LinkedHashMap<>();
+                response.put("items", items);
+                response.put("fetched_at", security.now());
+                response.put("data_complete", Boolean.TRUE.equals(upstream.get("data_complete")));
+                response.put("academic_scope", academicScope);
+                putDateIfValid(response, "semester_start", upstream.get("semester_start"));
+                putDateIfValid(response, "semester_end", upstream.get("semester_end"));
+                return response;
             });
             admin.recordFeatureUse(userId, "schedule", true);
             return result;
@@ -378,7 +384,7 @@ public class DormCheckServiceImpl implements DormCheckService {
         } catch (Exception error) {
             throw new IllegalStateException("credential encryption failed", error);
         }
-        String hint = "*".repeat(Math.max(4, account.length() - 2)) + account.substring(Math.max(0, account.length() - 2));
+        String hint = maskAccount(account);
         CredentialEntity entity = new CredentialEntity();
         entity.userId = userId(session);
         entity.ciphertext = encrypted;
@@ -388,6 +394,12 @@ public class DormCheckServiceImpl implements DormCheckService {
         academicCache.invalidateUser(userId(session));
         addNotification(userId(session), "credentials", "校园账号已更新", "校园平台账号凭据已安全保存，请重新验证后再启用定时任务。", security.now());
         return Map.of("configured", true, "account_hint", hint);
+    }
+
+    private static String maskAccount(String account) {
+        if (account.length() <= 4) return "***" + account.substring(Math.max(0, account.length() - 2));
+        if (account.length() <= 6) return account.substring(0, 1) + "***" + account.substring(account.length() - 2);
+        return account.substring(0, 3) + "***" + account.substring(account.length() - 3);
     }
 
     public Map<String, Object> verifyCredentials(Map<String, Object> session, HttpServletRequest request) {
@@ -574,6 +586,17 @@ public class DormCheckServiceImpl implements DormCheckService {
         int year = now.getMonthValue() >= 8 ? now.getYear() : now.getYear() - 1;
         String term = now.getMonthValue() >= 8 ? "3" : "12";
         return year + "-" + term;
+    }
+
+    private void putDateIfValid(Map<String, Object> target, String key, Object value) {
+        if (value instanceof String date && date.matches("\\d{4}-\\d{2}-\\d{2}")) {
+            try {
+                java.time.LocalDate.parse(date);
+                target.put(key, date);
+            } catch (java.time.DateTimeException ignored) {
+                // Ignore invalid upstream calendar dates; the client will use its fallback.
+            }
+        }
     }
 
     private Map<String, Object> authResponse(String id, String email, String name, String csrf, String currentDeviceId) {

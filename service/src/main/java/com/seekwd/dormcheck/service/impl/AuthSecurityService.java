@@ -52,6 +52,12 @@ public class AuthSecurityService {
     public void sendRegistrationCode(String email, String ip, String deviceId) {
         String normalized = normalizeEmail(email);
         requireSupportedRegistrationEmail(normalized);
+        // Registration codes are expensive external side effects. Keep the
+        // existing per-user/device limits, but also cap distributed sprays
+        // that rotate source IPs and recipient addresses.
+        String domain = normalized.substring(normalized.lastIndexOf('@') + 1);
+        limiter.check("register-email-global-window", "global", "all", 10, 600);
+        limiter.check("register-email-domain", "global", domain, 8, 3600);
         limiter.check("register-email-code", ip, normalized, 3, 3600);
         limiter.check("register-email-global", "global", normalized, 5, 3600);
         limiter.checkDevice("register-code-device", deviceId, 5, 3600);
@@ -77,6 +83,11 @@ public class AuthSecurityService {
 
     public void sendLoginCode(String email, String ip, String deviceId) {
         String normalized = normalizeEmail(email);
+        String domain = normalized.substring(normalized.lastIndexOf('@') + 1);
+        // Login codes are an external side effect too. Per-IP limits alone are
+        // insufficient when an attacker rotates proxies or recipient addresses.
+        limiter.check("login-email-global-window", "global", "all", 20, 600);
+        limiter.check("login-email-domain", "global", domain, 20, 3600);
         limiter.check("login-email-code", ip, normalized, 5, 900);
         limiter.checkDevice("login-code-device", deviceId, 10, 900);
         issueEmailCode(normalized, EmailCodePurpose.LOGIN.value(), ip);
@@ -127,8 +138,12 @@ public class AuthSecurityService {
         return Map.of("user_id", userId, "totp_enabled", mfa != null && mfa.enabled == 1);
     }
 
-    public Map<String, String> beginTotpSetup(Map<String, Object> session) {
+    public Map<String, String> beginTotpSetup(Map<String, Object> session, String ip) {
         String userId = (String) session.get("user_id");
+        limiter.check("totp-setup", ip, userId, 3, 3600);
+        if (totpEnabled(userId)) {
+            throw new ApiException(org.springframework.http.HttpStatus.CONFLICT, "二次认证已启用，请先完成验证后再更换密钥");
+        }
         byte[] secret = security.randomBytes(20);
         securityMapper.upsertTotp(userId, cipher.encrypt(secret), security.now());
         String encoded = base32(secret);
@@ -137,8 +152,9 @@ public class AuthSecurityService {
         return Map.of("secret", encoded, "otpauth_url", "otpauth://totp/" + label + "?secret=" + encoded + "&issuer=" + issuer + "&algorithm=SHA1&digits=6&period=30");
     }
 
-    public Map<String, Boolean> confirmTotp(Map<String, Object> session, String code) {
+    public Map<String, Boolean> confirmTotp(Map<String, Object> session, String code, String ip) {
         String userId = (String) session.get("user_id");
+        limiter.check("totp-confirm", ip, userId, 10, 900);
         var row = securityMapper.findTotp(userId);
         if (row == null || !verifyTotp(cipher.decrypt(row.secretCiphertext), code)) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "动态口令无效");

@@ -16,7 +16,43 @@ export type ApiDashboard = {
 export type ApiDevice = { id: string; name: string; platform: string; language: string; timezone: string; screen_size: string; hardware_threads: number | null; device_memory: number | null; created_at: string; last_seen_at: string; current: boolean };
 export type ApiAcademicNotice = { title: string; date: string; url: string };
 export type ApiAcademicScheduleItem = { course: string; teacher: string; room: string; weekday: string; periods: string; weeks: string; type: string };
-export type ApiAcademicDataMeta = { fetched_at: string; cache_status: "fresh" | "stale" | "refreshed" | "stale-fallback"; academic_scope?: string };
+export type ApiAcademicDataMeta = { fetched_at: string; cache_status: "fresh" | "stale" | "refreshed" | "stale-fallback"; academic_scope?: string; semester_start?: string; semester_end?: string };
+export type ApiXiangqiColor = "red" | "black";
+export type ApiXiangqiMove = { number: number; color: ApiXiangqiColor; from: string; to: string; piece: string; captured: string; notation: string };
+export type ApiXiangqiProfile = {
+  coins: number; rating: number; rated_games: number; wins: number; losses: number; draws: number; relief_claims: number;
+  stake: number; ad_reward: number; ads_used_today: number; ads_limit: number; relief_reward: number;
+  relief_remaining: number; can_claim_relief: boolean;
+};
+export type ApiXiangqiMessage = { id: string; mine: boolean; name: string; body: string; created_at: string };
+export type ApiXiangqiMatch = { status: "idle" | "searching" | "matched"; game?: ApiXiangqiGame; profile?: ApiXiangqiProfile };
+export type ApiXiangqiAdSession = { session_id: string; claim_path: string; available_at: string; expires_at: string; reward: number; mode: "demo" | "provider" };
+export type ApiXiangqiClock = { red_ms: number; black_ms: number; increment_ms: number; max_game_ms: number; started_at: string; running_color: ApiXiangqiColor | ""; turn_started_at: string; sampled_at: string };
+export type ApiXiangqiGame = {
+  id: string;
+  room_code: string;
+  status: "waiting" | "active" | "finished";
+  game_type: "friend" | "ranked";
+  version: number;
+  host_name: string;
+  guest_name: string;
+  opponent_name: string | null;
+  my_color: ApiXiangqiColor | null;
+  turn: ApiXiangqiColor;
+  my_turn: boolean;
+  in_check: boolean;
+  winner_color: ApiXiangqiColor | null;
+  finish_reason: string | null;
+  draw_offered_by_me: boolean;
+  draw_offered_by_opponent: boolean;
+  board: { squares: Record<string, string>; red_name: string; black_name: string };
+  fen: string;
+  legal_moves: Record<string, string[]>;
+  moves: ApiXiangqiMove[];
+  clock: ApiXiangqiClock;
+  created_at: string;
+  updated_at: string;
+};
 export type ApiAdminOverview = {
   admin: { role: "owner" | "operator" | "analyst"; name: string };
   users: { total: number; configured: number; verified: number; scheduled: number };
@@ -24,7 +60,7 @@ export type ApiAdminOverview = {
   queue: { queued: number; running: number; retry_wait: number };
   feature_use_today: { timetable: number; notices: number };
 };
-export type ApiAdminUser = { id: string; email: string; name: string; registered_at: string; credential_configured: boolean; credential_verified: boolean; schedule_enabled: boolean; last_run_status: string | null; last_run_at: string | null };
+export type ApiAdminUser = { id: string; email: string; name: string; registered_at: string; credential_hint: string; credential_configured: boolean; credential_verified: boolean; schedule_enabled: boolean; last_run_status: string | null; last_run_at: string | null };
 export type ApiAdminRun = { id: string; email: string; name: string; status: "success" | "failure"; message: string; time: string; duration_ms: number };
 export type ApiAdminQueueItem = { id: string; email: string; name: string; trigger: string; status: string; attempts: number; max_attempts: number; created_at: string; not_before: string; started_at: string; reason: string };
 export type ApiAdminFeatureUse = { feature: "notices" | "schedule"; result: "success" | "failure"; time: string; name: string; email: string };
@@ -38,7 +74,7 @@ const browserAcademicInFlight = new Map<string, Promise<unknown>>();
 const BROWSER_ACADEMIC_TTL = 60_000;
 
 function browserCacheKey(kind: string, userId = activeUserId) {
-  const scope = kind === "schedule" ? `:${currentAcademicScope()}` : "";
+  const scope = kind === "schedule" ? `:${currentAcademicScope()}:calendar-v1` : "";
   return `dormcheck:${userId}:academic:${kind}${scope}`;
 }
 
@@ -217,6 +253,35 @@ export const dormApi = {
     browserAcademicInFlight.set(key, pending);
     return pending;
   },
+  xiangqiGames: () => request<ApiXiangqiGame[]>("/xiangqi/games"),
+  xiangqiProfile: () => request<ApiXiangqiProfile>("/xiangqi/profile"),
+  startXiangqiMatch: () => request<ApiXiangqiMatch>("/xiangqi/match", { method: "POST" }),
+  xiangqiMatchStatus: () => request<ApiXiangqiMatch>("/xiangqi/match"),
+  cancelXiangqiMatch: () => request<ApiXiangqiMatch>("/xiangqi/match", { method: "DELETE" }),
+  startXiangqiAd: () => request<ApiXiangqiAdSession>("/xiangqi/rewards/ad/start", { method: "POST" }),
+  claimXiangqiAd: (claimPath: string) => request<ApiXiangqiProfile>(claimPath, { method: "POST" }),
+  claimXiangqiRelief: () => request<ApiXiangqiProfile>("/xiangqi/rewards/relief", { method: "POST" }),
+  createXiangqiGame: () => request<ApiXiangqiGame>("/xiangqi/games", { method: "POST" }),
+  joinXiangqiGame: (roomCode: string) => request<ApiXiangqiGame>("/xiangqi/games/join", {
+    method: "POST", body: JSON.stringify({ roomCode }),
+  }),
+  xiangqiGame: (id: string) => request<ApiXiangqiGame>(`/xiangqi/games/${encodeURIComponent(id)}`),
+  moveXiangqi: (id: string, from: string, to: string, expectedVersion: number) => request<ApiXiangqiGame>(
+    `/xiangqi/games/${encodeURIComponent(id)}/moves`,
+    { method: "POST", body: JSON.stringify({ from, to, expectedVersion }) },
+  ),
+  resignXiangqi: (id: string, expectedVersion: number) => request<ApiXiangqiGame>(
+    `/xiangqi/games/${encodeURIComponent(id)}/resign`,
+    { method: "POST", body: JSON.stringify({ expectedVersion }) },
+  ),
+  drawXiangqi: (id: string, action: "offer" | "accept" | "decline", expectedVersion: number) => request<ApiXiangqiGame>(
+    `/xiangqi/games/${encodeURIComponent(id)}/draw`,
+    { method: "POST", body: JSON.stringify({ action, expectedVersion }) },
+  ),
+  xiangqiMessages: (id: string) => request<ApiXiangqiMessage[]>(`/xiangqi/games/${encodeURIComponent(id)}/messages`),
+  postXiangqiMessage: (id: string, body: string) => request<ApiXiangqiMessage>(`/xiangqi/games/${encodeURIComponent(id)}/messages`, {
+    method: "POST", body: JSON.stringify({ body }),
+  }),
   markNotificationsRead: () => request<{ updated: number }>("/notifications/read", { method: "PUT" }),
   markNotificationRead: (id: string) => request<{ updated: boolean }>(`/notifications/${encodeURIComponent(id)}/read`, { method: "PUT" }),
   saveCredentials: (account: string, password: string) => request<{ configured: boolean; account_hint: string }>("/credentials", {
@@ -243,18 +308,17 @@ export const dormApi = {
     adminCsrfToken = result.csrf_token;
     return result;
   },
-  adminBootstrap: (token: string, email: string, name: string, password: string) => request<{ created: boolean; admin_id: string; secret: string; otpauth_url: string }>("/admin/auth/bootstrap", { method: "POST", body: JSON.stringify({ token, email, name, password }) }),
-  adminBootstrapConfirm: (token: string, email: string, code: string) => request<{ enabled: boolean }>("/admin/auth/bootstrap/confirm", { method: "POST", body: JSON.stringify({ token, email, code }) }),
+  adminRequestLoginCode: (email: string, password: string) => request<{ sent: boolean }>("/admin/auth/login/code", { method: "POST", body: JSON.stringify({ email, password }) }),
+  adminBootstrap: (token: string, email: string, name: string, password: string) => request<{ created: boolean; admin_id: string; email: string }>("/admin/auth/bootstrap", { method: "POST", body: JSON.stringify({ token, email, name, password }) }),
   async adminLogout() {
     const result = await request<{ ok: boolean }>("/admin/auth/logout", { method: "POST" });
     adminCsrfToken = "";
     return result;
   },
-  adminCreateAccount: (email: string, name: string, password: string, role: "owner" | "operator" | "analyst") => request<{ created: boolean; email: string; role: string; secret: string; otpauth_url: string }>("/admin/accounts", { method: "POST", body: JSON.stringify({ email, name, password, role }) }),
-  adminConfirmAccount: (email: string, code: string) => request<{ enabled: boolean; email: string }>("/admin/accounts/totp/confirm", { method: "POST", body: JSON.stringify({ email, code }) }),
+  adminCreateAccount: (email: string, name: string, password: string, role: "owner" | "operator" | "analyst") => request<{ created: boolean; email: string; role: string }>("/admin/accounts", { method: "POST", body: JSON.stringify({ email, name, password, role }) }),
   adminOverview: () => request<ApiAdminOverview>("/admin/overview"),
   adminUsers: (page = 1, query = "") => request<{ items: ApiAdminUser[]; page: number; page_size: number; total: number }>(`/admin/users?page=${page}&q=${encodeURIComponent(query)}`),
-  adminRuns: (page = 1, status: "all" | "success" | "failure" = "all") => request<{ items: ApiAdminRun[]; page: number; page_size: number; total: number }>(`/admin/runs?page=${page}&status=${status}`),
+  adminRuns: (page = 1, status: "all" | "success" | "failure" = "all", range: "all" | "7d" | "30d" = "all") => request<{ items: ApiAdminRun[]; page: number; page_size: number; total: number; range: string }>(`/admin/runs?page=${page}&status=${status}&range=${range}`),
   adminQueue: () => request<{ items: ApiAdminQueueItem[] }>("/admin/queue"),
   adminAudit: () => request<{ items: ApiAdminAudit[] }>("/admin/audit"),
   adminFeatures: (page = 1, feature: "all" | "notices" | "schedule" = "all") => request<{ items: ApiAdminFeatureUse[]; page: number; page_size: number; total: number }>(`/admin/features?page=${page}&feature=${feature}`),
